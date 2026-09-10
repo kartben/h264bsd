@@ -1,0 +1,29 @@
+# Copyright (c) 2026 Benjamin Cabé
+# SPDX-License-Identifier: Apache-2.0
+
+menuconfig H264BSD
+	bool "h264bsd H.264 baseline profile decoder"
+	depends on ZEPHYR_H264BSD_MODULE
+	help
+	  Decode H.264 baseline profile video in software. On an Armv8.1-M
+	  core with Helium the filters and interpolators are vectorised
+	  automatically; everywhere else the plain C is built.
+
+if H264BSD
+
+config H264BSD_MALLOC
+	string "Name of the function the decoder allocates through"
+	default "malloc"
+	help
+	  The decoder allocates its reference pictures once, when the stream
+	  dimensions become known, and they are large: a megabyte or so at
+	  800x480. Name a function of your own here to place them somewhere
+	  other than the libc heap.
+
+config H264BSD_FREE
+	string "Name of the function the decoder releases memory through"
+	default "free"
+	help
+	  Releases what H264BSD_MALLOC returned.
+
+endif # H264BSD
