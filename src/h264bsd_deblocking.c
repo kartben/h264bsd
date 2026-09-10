@@ -50,6 +50,7 @@
 
 #include "basetype.h"
 #include "h264bsd_util.h"
+#include "h264bsd_mve.h"
 #include "h264bsd_macroblock_layer.h"
 #include "h264bsd_deblocking.h"
 #include "h264bsd_dpb.h"
@@ -678,6 +679,18 @@ void FilterVerLumaEdge(
     ASSERT(bS && bS <= 4);
     ASSERT(thresholds);
 
+#ifdef H264BSD_HAS_MVE
+    if (bS < 4)
+    {
+        mve_filter_ver_luma_edge(data, (i32)imageWidth,
+                                 (int16_t)thresholds->tc0[bS-1],
+                                 (int16_t)thresholds->alpha,
+                                 (int16_t)thresholds->beta);
+
+        return;
+    }
+#endif
+
     if (bS < 4)
     {
         tc = thresholds->tc0[bS-1];
@@ -789,6 +802,13 @@ void FilterHorLumaEdge(
     ASSERT(bS < 4);
     ASSERT(thresholds);
 
+#ifdef H264BSD_HAS_MVE
+    mve_filter_hor_luma8(data, imageWidth, (int16_t)thresholds->tc0[bS-1],
+                         (int16_t)thresholds->alpha, (int16_t)thresholds->beta, 4);
+
+    return;
+#endif
+
 //    if (sample ++ % (1024 * 128) == 0) {
 //        printf("Hash A: %d, Hash B: %d\n", hashA, hashB);
 //    }
@@ -870,6 +890,21 @@ void FilterHorLuma(
 //        printf("Hash A: %d, Hash B: %d\n", hashA, hashB);
 //    }
 
+#ifdef H264BSD_HAS_MVE
+    if (bS < 4)
+    {
+        mve_filter_hor_luma8(data, imageWidth, (int16_t)thresholds->tc0[bS-1],
+                             (int16_t)alpha, (int16_t)beta, 8);
+        mve_filter_hor_luma8(data + 8, imageWidth, (int16_t)thresholds->tc0[bS-1],
+                             (int16_t)alpha, (int16_t)beta, 8);
+        return;
+    }
+
+    mve_filter_hor_luma8_bs4(data, imageWidth, (int16_t)alpha, (int16_t)beta);
+    mve_filter_hor_luma8_bs4(data + 8, imageWidth, (int16_t)alpha, (int16_t)beta);
+
+    return;
+#endif
     if (bS < 4)
     {
         tc = thresholds->tc0[bS-1];
@@ -1059,6 +1094,13 @@ void FilterHorChromaEdge(
     ASSERT(bS < 4);
     ASSERT(thresholds);
 
+#ifdef H264BSD_HAS_MVE
+    mve_filter_hor_chroma8(data, width, (int16_t)(thresholds->tc0[bS-1] + 1),
+                           (int16_t)thresholds->alpha, (int16_t)thresholds->beta, 2);
+
+    return;
+#endif
+
     tc = thresholds->tc0[bS-1] + 1;
     for (i = 2; i; i--, data++)
     {
@@ -1106,6 +1148,21 @@ void FilterHorChroma(
     ASSERT(data);
     ASSERT(bS <= 4);
     ASSERT(thresholds);
+
+#ifdef H264BSD_HAS_MVE
+    if (bS < 4)
+    {
+        mve_filter_hor_chroma8(data, width, (int16_t)(thresholds->tc0[bS-1] + 1),
+                               (int16_t)thresholds->alpha, (int16_t)thresholds->beta, 8);
+    }
+    else
+    {
+        mve_filter_hor_chroma8_bs4(data, width, (int16_t)thresholds->alpha,
+                                   (int16_t)thresholds->beta, 8);
+    }
+
+    return;
+#endif
 
     if (bS < 4)
     {

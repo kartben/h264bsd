@@ -36,6 +36,7 @@
 #include "h264bsd_macroblock_layer.h"
 #include "h264bsd_image.h"
 #include "h264bsd_util.h"
+#include "h264bsd_mve.h"
 
 #ifdef H264DEC_OMXDL
 #include "omxtypes.h"
@@ -152,6 +153,24 @@ void h264bsdInterpolateChromaHor(
 
     val = 8 - xFrac;
 
+    #ifdef H264BSD_HAS_MVE
+    {
+        u32 comp2, yy;
+
+        for (comp2 = 0; comp2 <= 1; comp2++)
+        {
+            for (yy = 0; yy < chromaPartHeight; yy++)
+            {
+                mve_chroma_bilin8(predPartChroma + comp2 * 8 * 8 + yy * 8,
+                                  pRef + (comp2 * height + (u32)y0 + yy) * width +
+                                  (u32)x0, (i32)width, chromaPartWidth,
+                                  (int16_t)(xFrac), (int16_t)(0));
+            }
+        }
+
+        return;
+    }
+#endif
     for (comp = 0; comp <= 1; comp++)
     {
 
@@ -248,6 +267,24 @@ void h264bsdInterpolateChromaVer(
 
     val = 8 - yFrac;
 
+    #ifdef H264BSD_HAS_MVE
+    {
+        u32 comp2, yy;
+
+        for (comp2 = 0; comp2 <= 1; comp2++)
+        {
+            for (yy = 0; yy < chromaPartHeight; yy++)
+            {
+                mve_chroma_bilin8(predPartChroma + comp2 * 8 * 8 + yy * 8,
+                                  pRef + (comp2 * height + (u32)y0 + yy) * width +
+                                  (u32)x0, (i32)width, chromaPartWidth,
+                                  (int16_t)(0), (int16_t)(yFrac));
+            }
+        }
+
+        return;
+    }
+#endif
     for (comp = 0; comp <= 1; comp++)
     {
 
@@ -344,6 +381,24 @@ void h264bsdInterpolateChromaHorVer(
     valX = 8 - xFrac;
     valY = 8 - yFrac;
 
+    #ifdef H264BSD_HAS_MVE
+    {
+        u32 comp2, yy;
+
+        for (comp2 = 0; comp2 <= 1; comp2++)
+        {
+            for (yy = 0; yy < chromaPartHeight; yy++)
+            {
+                mve_chroma_bilin8(predPartChroma + comp2 * 8 * 8 + yy * 8,
+                                  ref + (comp2 * height + (u32)y0 + yy) * width +
+                                  (u32)x0, (i32)width, chromaPartWidth,
+                                  (int16_t)(xFrac), (int16_t)(yFrac));
+            }
+        }
+
+        return;
+    }
+#endif
     for (comp = 0; comp <= 1; comp++)
     {
 
@@ -525,6 +580,21 @@ void h264bsdInterpolateVerHalf(
     ptrC = ref + width;
     ptrV = ptrC + 5*width;
 
+#ifdef H264BSD_HAS_MVE
+    for (i = 0; i < partHeight; i++)
+    {
+        u32 x;
+
+        for (x = 0; x < partWidth; x += 8)
+        {
+            mve_sixtap_ver8(mb + i * 16 + x, ref + i * width + x, (i32)width,
+                            MIN(8U, partWidth - x));
+        }
+    }
+
+    return;
+#endif
+
     /* 4 pixels per iteration, interpolate using 5 vertical samples */
     for (i = (partHeight >> 2); i; i--)
     {
@@ -647,6 +717,23 @@ void h264bsdInterpolateVerQuarter(
     /* Pointer to integer sample position, either M or R */
     ptrInt = ptrC + (2+verOffset)*width;
 
+    #ifdef H264BSD_HAS_MVE
+    {
+        u32 rr, xx;
+
+        for (rr = 0; rr < partHeight; rr++)
+        {
+            for (xx = 0; xx < partWidth; xx += 8)
+            {
+                mve_sixtap_ver_quarter8(mb + rr * 16 + xx,
+                                        ref + rr * width + xx, (i32)width,
+                                        MIN(8U, partWidth - xx), verOffset);
+            }
+        }
+
+        return;
+    }
+#endif
     /* 4 pixels per iteration
      * interpolate using 5 vertical samples and average between
      * interpolated value and integer sample value */
@@ -778,6 +865,22 @@ void h264bsdInterpolateHorHalf(
 
     ptrJ = ref + 5;
 
+    #ifdef H264BSD_HAS_MVE
+    {
+        u32 rr, xx;
+
+        for (rr = 0; rr < partHeight; rr++)
+        {
+            for (xx = 0; xx < partWidth; xx += 8)
+            {
+                mve_sixtap_hor8(mb + rr * 16 + xx, ref + rr * width + xx,
+                                MIN(8U, partWidth - xx));
+            }
+        }
+
+        return;
+    }
+#endif
     for (y = partHeight; y; y--)
     {
         tmp6 = *(ptrJ - 5);
@@ -900,6 +1003,22 @@ void h264bsdInterpolateHorQuarter(
 
     ptrJ = ref + 5;
 
+    #ifdef H264BSD_HAS_MVE
+    {
+        u32 rr, xx;
+
+        for (rr = 0; rr < partHeight; rr++)
+        {
+            for (xx = 0; xx < partWidth; xx += 8)
+            {
+                mve_sixtap_hor_quarter8(mb + rr * 16 + xx, ref + rr * width + xx,
+                                        MIN(8U, partWidth - xx), horOffset);
+            }
+        }
+
+        return;
+    }
+#endif
     for (y = partHeight; y; y--)
     {
         tmp6 = *(ptrJ - 5);
@@ -1039,6 +1158,22 @@ void h264bsdInterpolateHorVerQuarter(
     ref += (u32)y0 * width + (u32)x0;
 
     /* ptrJ points to either J or Q, depending on vertical offset */
+#ifdef H264BSD_HAS_MVE
+    {
+        u32 rr, xx;
+
+        for (rr = 0; rr < partHeight; rr++)
+        {
+            for (xx = 0; xx < partWidth; xx += 8)
+            {
+                mve_horver_quarter8(mb + rr * 16 + xx, ref, (i32)width, rr, xx,
+                                    MIN(8U, partWidth - xx), horVerOffset);
+            }
+        }
+
+        return;
+    }
+#endif
     ptrJ = ref + (((horVerOffset & 0x2) >> 1) + 2) * width + 5;
 
     /* ptrC points to either C or D, depending on horizontal offset */
