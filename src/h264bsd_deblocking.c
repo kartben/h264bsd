@@ -53,6 +53,7 @@
 #include "h264bsd_macroblock_layer.h"
 #include "h264bsd_deblocking.h"
 #include "h264bsd_dpb.h"
+#include "h264bsd_platform.h"
 
 #ifdef H264DEC_OMXDL
 #include "omxtypes.h"
@@ -576,6 +577,42 @@ void h264bsdFilterPicture(
   image_t *image,
   mbStorage_t *mb)
 {
+    ASSERT(image);
+    h264bsdFilterMbRows(image, mb, 0, image->height);
+}
+
+/*------------------------------------------------------------------------------
+
+    Function: h264bsdFilterMbRows
+
+        Functional description:
+          Deblocking filtering of macroblock rows [firstRow, endRow) of a
+          picture, in raster order. Filtering a row also modifies the three
+          bottom sample lines of the row above (top macroblock edge), exactly
+          as the whole-picture filtering does, so rows can be filtered as
+          soon as they and all rows above them are completely decoded. This
+          keeps the filtering close to the reconstruction of the same rows
+          (the data is still in any cache and no second pass over the whole
+          picture is needed).
+
+        Inputs:
+          image         pointer to image to be filtered
+          mb            pointer to macroblock data structure of the top-left
+                        macroblock of the picture
+          firstRow      first macroblock row to filter
+          endRow        one past the last macroblock row to filter
+
+        Outputs:
+          image         filtered rows stored here
+
+------------------------------------------------------------------------------*/
+H264BSD_FAST_CODE
+void h264bsdFilterMbRows(
+  image_t *image,
+  mbStorage_t *mb,
+  u32 firstRow,
+  u32 endRow)
+{
 
 /* Variables */
 
@@ -594,56 +631,92 @@ void h264bsdFilterPicture(
     ASSERT(image->data);
     ASSERT(image->width);
     ASSERT(image->height);
+    ASSERT(endRow <= image->height);
 
     picWidthInMbs = image->width;
-    data = image->data;
     picSizeInMbs = picWidthInMbs * image->height;
 
-    pMb = mb;
+    pMb = mb + firstRow * picWidthInMbs;
 
-    for (mbRow = 0, mbCol = 0; mbRow < image->height; pMb++)
+    for (mbRow = firstRow; mbRow < endRow; mbRow++)
     {
-        flags = GetMbFilteringFlags(pMb);
-
-        if (flags)
+        for (mbCol = 0; mbCol < picWidthInMbs; mbCol++, pMb++)
         {
-            /* GetBoundaryStrengths function returns non-zero value if any of
-             * the bS values for the macroblock being processed was non-zero */
-            if (GetBoundaryStrengths(pMb, bS, flags))
+            flags = GetMbFilteringFlags(pMb);
+
+            if (flags)
             {
-                /* luma */
-                GetLumaEdgeThresholds(thresholds, pMb, flags);
-                data = image->data + mbRow * picWidthInMbs * 256 + mbCol * 16;
+                /* GetBoundaryStrengths function returns non-zero value if any
+                 * of the bS values for the macroblock being processed was
+                 * non-zero */
+                if (GetBoundaryStrengths(pMb, bS, flags))
+                {
+                    /* luma */
+                    GetLumaEdgeThresholds(thresholds, pMb, flags);
+                    data = image->data + mbRow * picWidthInMbs * 256 + mbCol * 16;
 
-                FilterLuma((u8*)data, bS, thresholds, picWidthInMbs*16);
+                    FilterLuma((u8*)data, bS, thresholds, picWidthInMbs*16);
 
-                /* chroma */
-                GetChromaEdgeThresholds(thresholds, pMb, flags,
-                    pMb->chromaQpIndexOffset);
-                data = image->data + picSizeInMbs * 256 +
-                    mbRow * picWidthInMbs * 64 + mbCol * 8;
+                    /* chroma */
+                    GetChromaEdgeThresholds(thresholds, pMb, flags,
+                        pMb->chromaQpIndexOffset);
+                    data = image->data + picSizeInMbs * 256 +
+                        mbRow * picWidthInMbs * 64 + mbCol * 8;
 
-                FilterChroma((u8*)data, data + 64*picSizeInMbs, bS,
-                        thresholds, picWidthInMbs*8);
+                    FilterChroma((u8*)data, data + 64*picSizeInMbs, bS,
+                            thresholds, picWidthInMbs*8);
 
+                }
             }
-        }
-
-        mbCol++;
-        if (mbCol == picWidthInMbs)
-        {
-            mbCol = 0;
-            mbRow++;
         }
     }
 
 }
 
-int sample = 0;
-unsigned int hashA = 0;
-unsigned int hashB = 0;
-unsigned int hashC = 0;
-unsigned int hashD = 0;
+/*------------------------------------------------------------------------------
+
+    Function: h264bsdSaveUnfilteredLine
+
+        Functional description:
+          Copy the bottom luma and chroma sample lines of macroblock row
+          mbRow into image->unfilteredLine, before the row is deblocked.
+          Intra prediction of the next macroblock row reads its "above"
+          samples from there (see h264bsdGetNeighbourPels).
+
+------------------------------------------------------------------------------*/
+void h264bsdSaveUnfilteredLine(image_t *image, u32 mbRow)
+{
+    u32 width = image->width;
+    u32 picSize = width * image->height;
+    u8 *line = image->unfilteredLine;
+    const u8 *src;
+
+    ASSERT(line);
+
+    src = image->data + (mbRow * 16 + 15) * width * 16;
+    memcpy(line + UNFILTERED_LINE_LUMA(width), src, width * 16);
+
+    src = image->data + picSize * 256 + (mbRow * 8 + 7) * width * 8;
+    memcpy(line + UNFILTERED_LINE_CB(width), src, width * 8);
+
+    src += picSize * 64;
+    memcpy(line + UNFILTERED_LINE_CR(width), src, width * 8);
+}
+
+/*------------------------------------------------------------------------------
+
+    Edge filters
+
+    Sample tests |a-b| < t are written as (u32)(a - b + t - 1) < 2t - 1,
+    which is one add and one compare instead of an absolute value; this
+    needs t >= 1, and edges with alpha == 0 or beta == 0 never change any
+    sample, so those are skipped up front. Clip1() is a saturating USAT on
+    Arm instead of a table lookup. The thresholds are copied to locals so
+    the compiler does not have to reload them after every sample store.
+
+------------------------------------------------------------------------------*/
+
+#define IN_RANGE(diff, bias, range) ((u32)((diff) + (bias)) < (range))
 
 /*------------------------------------------------------------------------------
 
@@ -653,6 +726,7 @@ unsigned int hashD = 0;
             Filter one vertical 4-pixel luma edge.
 
 ------------------------------------------------------------------------------*/
+H264BSD_FAST_CODE
 void FilterVerLumaEdge(
   u8 *data,
   u32 bS,
@@ -665,11 +739,10 @@ void FilterVerLumaEdge(
     i32 delta, tc, tmp;
     u32 i;
     i32 p0, q0, p1, q1, p2, q2;
-    u32 tmpFlag;
-    const u8 *clp = h264bsdClip + 512;
-
     u32 alpha = thresholds->alpha;
     u32 beta = thresholds->beta;
+    i32 alphaBias, betaBias;
+    u32 alphaRange, betaRange;
     i32 val;
 
 /* Code */
@@ -677,6 +750,14 @@ void FilterVerLumaEdge(
     ASSERT(data);
     ASSERT(bS && bS <= 4);
     ASSERT(thresholds);
+
+    if (!alpha || !beta)
+        return;
+
+    alphaBias = (i32)alpha - 1;
+    alphaRange = 2 * alpha - 1;
+    betaBias = (i32)beta - 1;
+    betaRange = 2 * beta - 1;
 
     if (bS < 4)
     {
@@ -687,73 +768,73 @@ void FilterVerLumaEdge(
             p1 = data[-2]; p0 = data[-1];
             q0 = data[0]; q1 = data[1];
 
-            if ( ((u32)ABS(p0 - q0) < alpha) &&
-                 ((u32)ABS(p1 - p0) < beta)  &&
-                 ((u32)ABS(q1 - q0) < beta) )
+            if ( IN_RANGE(p0 - q0, alphaBias, alphaRange) &&
+                 IN_RANGE(p1 - p0, betaBias, betaRange)  &&
+                 IN_RANGE(q1 - q0, betaBias, betaRange) )
             {
                 p2 = data[-3];
                 q2 = data[2];
 
-                if ((u32)ABS(p2 - p0) < beta)
+                if (IN_RANGE(p2 - p0, betaBias, betaRange))
                 {
                     val = (p2 + ((p0 + q0 + 1) >> 1) - (p1 << 1)) >> 1;
-                    data[-2] = (p1 + CLIP3(-tc, tc, val));
+                    data[-2] = (u8)(p1 + CLIP3(-tc, tc, val));
                     tmp++;
                 }
 
-                if ((u32)ABS(q2 - q0) < beta)
+                if (IN_RANGE(q2 - q0, betaBias, betaRange))
                 {
                     val = (q2 + ((p0 + q0 + 1) >> 1) - (q1 << 1)) >> 1;
-                    data[1] = (q1 + CLIP3(-tc, tc, val));
+                    data[1] = (u8)(q1 + CLIP3(-tc, tc, val));
                     tmp++;
                 }
 
                 val = (((q0 - p0) << 2) + (p1 - q1) + 4) >> 3;
                 delta = CLIP3(-tmp, tmp, val);
 
-                p0 = clp[p0 + delta];
-                q0 = clp[q0 - delta];
+                data[-1] = (u8)h264bsdClip255(p0 + delta);
+                data[ 0] = (u8)h264bsdClip255(q0 - delta);
                 tmp = tc;
-                data[-1] = p0;
-                data[ 0] = q0;
             }
-            // hashA += data[-2] + data[-1] + data[0] + data[1];
         }
     }
     else
     {
+        u32 strongRange = ((alpha >> 2) + 2) * 2 - 1;
+        i32 strongBias = (i32)(alpha >> 2) + 1;
+
         for (i = 4; i; i--, data += imageWidth)
         {
             p1 = data[-2]; p0 = data[-1];
             q0 = data[0]; q1 = data[1];
-            if ( ((u32)ABS(p0-q0) < alpha) &&
-                 ((u32)ABS(p1-p0) < beta)  &&
-                 ((u32)ABS(q1-q0) < beta) )
+            if ( IN_RANGE(p0 - q0, alphaBias, alphaRange) &&
+                 IN_RANGE(p1 - p0, betaBias, betaRange)  &&
+                 IN_RANGE(q1 - q0, betaBias, betaRange) )
             {
-                tmpFlag = ((u32)ABS(p0 - q0) < ((alpha >> 2) +2)) ? HANTRO_TRUE : HANTRO_FALSE;
+                u32 tmpFlag = IN_RANGE(p0 - q0, strongBias, strongRange);
 
                 p2 = data[-3];
                 q2 = data[2];
 
-                if (tmpFlag && (u32)ABS(p2-p0) < beta)
+                if (tmpFlag && IN_RANGE(p2 - p0, betaBias, betaRange))
                 {
                     tmp = p1 + p0 + q0;
-                    data[-1] = ((p2 + 2 * tmp + q1 + 4) >> 3);
-                    data[-2] = ((p2 + tmp + 2) >> 2);
-                    data[-3] = ((2 * data[-4] + 3 * p2 + tmp + 4) >> 3);
+                    data[-1] = (u8)((p2 + 2 * tmp + q1 + 4) >> 3);
+                    data[-2] = (u8)((p2 + tmp + 2) >> 2);
+                    data[-3] = (u8)((2 * data[-4] + 3 * p2 + tmp + 4) >> 3);
                 }
                 else
-                    data[-1] = (2 * p1 + p0 + q1 + 2) >> 2;
+                    data[-1] = (u8)((2 * p1 + p0 + q1 + 2) >> 2);
 
-                if (tmpFlag && (u32)ABS(q2-q0) < beta)
+                if (tmpFlag && IN_RANGE(q2 - q0, betaBias, betaRange))
                 {
                     tmp = p0 + q0 + q1;
-                    data[0] = ((p1 + 2 * tmp + q2 + 4) >> 3);
-                    data[1] = ((tmp + q2 + 2) >> 2);
-                    data[2] = ((2 * data[3] + 3 * q2 + tmp + 4) >> 3);
+                    data[0] = (u8)((p1 + 2 * tmp + q2 + 4) >> 3);
+                    data[1] = (u8)((tmp + q2 + 2) >> 2);
+                    data[2] = (u8)((2 * data[3] + 3 * q2 + tmp + 4) >> 3);
                 }
                 else
-                    data[0] = ((2 * q1 + q0 + p1 + 2) >> 2);
+                    data[0] = (u8)((2 * q1 + q0 + p1 + 2) >> 2);
             }
         }
     }
@@ -768,6 +849,7 @@ void FilterVerLumaEdge(
             Filter one horizontal 4-pixel luma edge
 
 ------------------------------------------------------------------------------*/
+H264BSD_FAST_CODE
 void FilterHorLumaEdge(
   u8 *data,
   u32 bS,
@@ -779,8 +861,11 @@ void FilterHorLumaEdge(
 
     i32 delta, tc, tmp;
     u32 i;
-    u8 p0, q0, p1, q1, p2, q2;
-    const u8 *clp = h264bsdClip + 512;
+    i32 p0, q0, p1, q1, p2, q2;
+    u32 alpha = thresholds->alpha;
+    u32 beta = thresholds->beta;
+    i32 alphaBias, betaBias;
+    u32 alphaRange, betaRange;
     i32 val;
 
 /* Code */
@@ -789,9 +874,13 @@ void FilterHorLumaEdge(
     ASSERT(bS < 4);
     ASSERT(thresholds);
 
-//    if (sample ++ % (1024 * 128) == 0) {
-//        printf("Hash A: %d, Hash B: %d\n", hashA, hashB);
-//    }
+    if (!alpha || !beta)
+        return;
+
+    alphaBias = (i32)alpha - 1;
+    alphaRange = 2 * alpha - 1;
+    betaBias = (i32)beta - 1;
+    betaRange = 2 * beta - 1;
 
     tc = thresholds->tc0[bS-1];
     tmp = tc;
@@ -799,39 +888,35 @@ void FilterHorLumaEdge(
     {
         p1 = data[-imageWidth*2]; p0 = data[-imageWidth];
         q0 = data[0]; q1 = data[imageWidth];
-        if ( ((u32)ABS(p0-q0) < thresholds->alpha) &&
-             ((u32)ABS(p1-p0) < thresholds->beta)  &&
-             ((u32)ABS(q1-q0) < thresholds->beta) )
+        if ( IN_RANGE(p0 - q0, alphaBias, alphaRange) &&
+             IN_RANGE(p1 - p0, betaBias, betaRange)  &&
+             IN_RANGE(q1 - q0, betaBias, betaRange) )
         {
             p2 = data[-imageWidth*3];
 
-            if ((u32)ABS(p2-p0) < thresholds->beta)
+            if (IN_RANGE(p2 - p0, betaBias, betaRange))
             {
                 val = (p2 + ((p0 + q0 + 1) >> 1) - (p1 << 1)) >> 1;
-                data[-imageWidth*2] = (p1 + CLIP3(-tc, tc, val));
+                data[-imageWidth*2] = (u8)(p1 + CLIP3(-tc, tc, val));
                 tmp++;
             }
 
             q2 = data[imageWidth*2];
 
-            if ((u32)ABS(q2-q0) < thresholds->beta)
+            if (IN_RANGE(q2 - q0, betaBias, betaRange))
             {
                 val = (q2 + ((p0 + q0 + 1) >> 1) - (q1 << 1)) >> 1;
-                data[imageWidth] = (q1 + CLIP3(-tc, tc, val));
+                data[imageWidth] = (u8)(q1 + CLIP3(-tc, tc, val));
                 tmp++;
             }
 
             val = ((((q0 - p0) << 2) + (p1 - q1) + 4) >> 3);
             delta = CLIP3(-tmp, tmp, val);
 
-            p0 = clp[p0 + delta];
-            q0 = clp[q0 - delta];
+            data[-imageWidth] = (u8)h264bsdClip255(p0 + delta);
+            data[  0] = (u8)h264bsdClip255(q0 - delta);
             tmp = tc;
-            data[-imageWidth] = p0;
-            data[  0] = q0;
         }
-
-        // hashB += data[-imageWidth*2] + data[-imageWidth] + data[0] + data[imageWidth];
     }
 }
 
@@ -844,6 +929,7 @@ void FilterHorLumaEdge(
             be done when bS is equal to all four edges.
 
 ------------------------------------------------------------------------------*/
+H264BSD_FAST_CODE
 void FilterHorLuma(
   u8 *data,
   u32 bS,
@@ -855,10 +941,10 @@ void FilterHorLuma(
     i32 delta, tc, tmp;
     u32 i;
     i32 p0, q0, p1, q1, p2, q2;
-    u32 tmpFlag;
-    const u8 *clp = h264bsdClip + 512;
     u32 alpha = thresholds->alpha;
     u32 beta = thresholds->beta;
+    i32 alphaBias, betaBias;
+    u32 alphaRange, betaRange;
     i32 val;
 /* Code */
 
@@ -866,9 +952,13 @@ void FilterHorLuma(
     ASSERT(bS <= 4);
     ASSERT(thresholds);
 
-//    if (sample ++ % (1024 * 64) == 0) {
-//        printf("Hash A: %d, Hash B: %d\n", hashA, hashB);
-//    }
+    if (!alpha || !beta)
+        return;
+
+    alphaBias = (i32)alpha - 1;
+    alphaRange = 2 * alpha - 1;
+    betaBias = (i32)beta - 1;
+    betaRange = 2 * beta - 1;
 
     if (bS < 4)
     {
@@ -878,13 +968,13 @@ void FilterHorLuma(
         {
             p1 = data[-imageWidth*2]; p0 = data[-imageWidth];
             q0 = data[0]; q1 = data[imageWidth];
-            if ( ((u32)ABS(p0 - q0) < alpha) &&
-                 ((u32)ABS(p1 - p0) < beta)  &&
-                 ((u32)ABS(q1 - q0) < beta) )
+            if ( IN_RANGE(p0 - q0, alphaBias, alphaRange) &&
+                 IN_RANGE(p1 - p0, betaBias, betaRange)  &&
+                 IN_RANGE(q1 - q0, betaBias, betaRange) )
             {
                 p2 = data[-imageWidth*3];
 
-                if ((u32)ABS(p2 - p0) < beta)
+                if (IN_RANGE(p2 - p0, betaBias, betaRange))
                 {
                     val = (p2 + ((p0 + q0 + 1) >> 1) - (p1 << 1)) >> 1;
                     data[-imageWidth*2] = (u8)(p1 + CLIP3(-tc, tc, val));
@@ -893,7 +983,7 @@ void FilterHorLuma(
 
                 q2 = data[imageWidth*2];
 
-                if ((u32)ABS(q2-q0) < beta)
+                if (IN_RANGE(q2 - q0, betaBias, betaRange))
                 {
                     val = (q2 + ((p0 + q0 + 1) >> 1) - (q1 << 1)) >> 1;
                     data[imageWidth] = (u8)(q1 + CLIP3(-tc, tc, val));
@@ -903,31 +993,31 @@ void FilterHorLuma(
                 val = ((((q0 - p0) << 2) + (p1 - q1) + 4) >> 3);
                 delta = CLIP3(-tmp, tmp, val);
 
-                p0 = clp[p0 + delta];
-                q0 = clp[q0 - delta];
+                data[-imageWidth] = (u8)h264bsdClip255(p0 + delta);
+                data[  0] = (u8)h264bsdClip255(q0 - delta);
                 tmp = tc;
-                data[-imageWidth] = p0;
-                data[  0] = q0;
             }
         }
     }
     else
     {
+        u32 strongRange = ((alpha >> 2) + 2) * 2 - 1;
+        i32 strongBias = (i32)(alpha >> 2) + 1;
+
         for (i = 16; i; i--, data++)
         {
             p1 = data[-imageWidth*2]; p0 = data[-imageWidth];
             q0 = data[0]; q1 = data[imageWidth];
-            if ( ((u32)ABS(p0 - q0) < alpha) &&
-                 ((u32)ABS(p1 - p0) < beta)  &&
-                 ((u32)ABS(q1 - q0) < beta) )
+            if ( IN_RANGE(p0 - q0, alphaBias, alphaRange) &&
+                 IN_RANGE(p1 - p0, betaBias, betaRange)  &&
+                 IN_RANGE(q1 - q0, betaBias, betaRange) )
             {
-                tmpFlag = ((u32)ABS(p0 - q0) < ((alpha >> 2) +2))
-                            ? HANTRO_TRUE : HANTRO_FALSE;
+                u32 tmpFlag = IN_RANGE(p0 - q0, strongBias, strongRange);
 
                 p2 = data[-imageWidth*3];
                 q2 = data[imageWidth*2];
 
-                if (tmpFlag && (u32)ABS(p2 - p0) < beta)
+                if (tmpFlag && IN_RANGE(p2 - p0, betaBias, betaRange))
                 {
                     tmp = p1 + p0 + q0;
                     data[-imageWidth] = (u8)((p2 + 2 * tmp + q1 + 4) >> 3);
@@ -938,7 +1028,7 @@ void FilterHorLuma(
                 else
                     data[-imageWidth] = (u8)((2 * p1 + p0 + q1 + 2) >> 2);
 
-                if (tmpFlag && (u32)ABS(q2 - q0) < beta)
+                if (tmpFlag && IN_RANGE(q2 - q0, betaBias, betaRange))
                 {
                     tmp = p0 + q0 + q1;
                     data[ 0] = (u8)((p1 + 2 * tmp + q2 + 4) >> 3);
@@ -947,12 +1037,10 @@ void FilterHorLuma(
                                           3 * q2 + tmp + 4) >> 3);
                 }
                 else
-                    data[0] = (2 * q1 + q0 + p1 + 2) >> 2;
+                    data[0] = (u8)((2 * q1 + q0 + p1 + 2) >> 2);
             }
         }
     }
-
-    // hashA += data[-imageWidth*2] + data[-imageWidth] + data[0] + data[imageWidth];
 
 }
 
@@ -964,6 +1052,7 @@ void FilterHorLuma(
             Filter one vertical 2-pixel chroma edge
 
 ------------------------------------------------------------------------------*/
+H264BSD_FAST_CODE
 void FilterVerChromaEdge(
   u8 *data,
   u32 bS,
@@ -974,8 +1063,12 @@ void FilterVerChromaEdge(
 /* Variables */
 
     i32 delta, tc;
-    u8 p0, q0, p1, q1;
-    const u8 *clp = h264bsdClip + 512;
+    i32 p0, q0, p1, q1;
+    u32 alpha = thresholds->alpha;
+    u32 beta = thresholds->beta;
+    i32 alphaBias, betaBias;
+    u32 alphaRange, betaRange;
+    u32 i;
 
 /* Code */
 
@@ -983,49 +1076,35 @@ void FilterVerChromaEdge(
     ASSERT(bS <= 4);
     ASSERT(thresholds);
 
-    p1 = data[-2]; p0 = data[-1];
-    q0 = data[0]; q1 = data[1];
-    if ( ((u32)ABS(p0-q0) < thresholds->alpha) &&
-         ((u32)ABS(p1-p0) < thresholds->beta)  &&
-         ((u32)ABS(q1-q0) < thresholds->beta) )
+    if (!alpha || !beta)
+        return;
+
+    alphaBias = (i32)alpha - 1;
+    alphaRange = 2 * alpha - 1;
+    betaBias = (i32)beta - 1;
+    betaRange = 2 * beta - 1;
+    tc = bS < 4 ? thresholds->tc0[bS-1] + 1 : 0;
+
+    for (i = 2; i; i--, data += width)
     {
-        if (bS < 4)
+        p1 = data[-2]; p0 = data[-1];
+        q0 = data[0]; q1 = data[1];
+        if ( IN_RANGE(p0 - q0, alphaBias, alphaRange) &&
+             IN_RANGE(p1 - p0, betaBias, betaRange)  &&
+             IN_RANGE(q1 - q0, betaBias, betaRange) )
         {
-            tc = thresholds->tc0[bS-1] + 1;
-            delta = CLIP3(-tc, tc, ((((q0 - p0) << 2) +
-                      (p1 - q1) + 4) >> 3));
-            p0 = clp[p0 + delta];
-            q0 = clp[q0 - delta];
-            data[-1] = p0;
-            data[ 0] = q0;
-        }
-        else
-        {
-            data[-1] = (2 * p1 + p0 + q1 + 2) >> 2;
-            data[ 0] = (2 * q1 + q0 + p1 + 2) >> 2;
-        }
-    }
-    data += width;
-    p1 = data[-2]; p0 = data[-1];
-    q0 = data[0]; q1 = data[1];
-    if ( ((u32)ABS(p0-q0) < thresholds->alpha) &&
-         ((u32)ABS(p1-p0) < thresholds->beta)  &&
-         ((u32)ABS(q1-q0) < thresholds->beta) )
-    {
-        if (bS < 4)
-        {
-            tc = thresholds->tc0[bS-1] + 1;
-            delta = CLIP3(-tc, tc, ((((q0 - p0) << 2) +
-                      (p1 - q1) + 4) >> 3));
-            p0 = clp[p0 + delta];
-            q0 = clp[q0 - delta];
-            data[-1] = p0;
-            data[ 0] = q0;
-        }
-        else
-        {
-            data[-1] = (2 * p1 + p0 + q1 + 2) >> 2;
-            data[ 0] = (2 * q1 + q0 + p1 + 2) >> 2;
+            if (bS < 4)
+            {
+                delta = CLIP3(-tc, tc, ((((q0 - p0) << 2) +
+                          (p1 - q1) + 4) >> 3));
+                data[-1] = (u8)h264bsdClip255(p0 + delta);
+                data[ 0] = (u8)h264bsdClip255(q0 - delta);
+            }
+            else
+            {
+                data[-1] = (u8)((2 * p1 + p0 + q1 + 2) >> 2);
+                data[ 0] = (u8)((2 * q1 + q0 + p1 + 2) >> 2);
+            }
         }
     }
 
@@ -1039,6 +1118,7 @@ void FilterVerChromaEdge(
             Filter one horizontal 2-pixel chroma edge
 
 ------------------------------------------------------------------------------*/
+H264BSD_FAST_CODE
 void FilterHorChromaEdge(
   u8 *data,
   u32 bS,
@@ -1050,8 +1130,11 @@ void FilterHorChromaEdge(
 
     i32 delta, tc;
     u32 i;
-    u8 p0, q0, p1, q1;
-    const u8 *clp = h264bsdClip + 512;
+    i32 p0, q0, p1, q1;
+    u32 alpha = thresholds->alpha;
+    u32 beta = thresholds->beta;
+    i32 alphaBias, betaBias;
+    u32 alphaRange, betaRange;
 
 /* Code */
 
@@ -1059,21 +1142,27 @@ void FilterHorChromaEdge(
     ASSERT(bS < 4);
     ASSERT(thresholds);
 
+    if (!alpha || !beta)
+        return;
+
+    alphaBias = (i32)alpha - 1;
+    alphaRange = 2 * alpha - 1;
+    betaBias = (i32)beta - 1;
+    betaRange = 2 * beta - 1;
+
     tc = thresholds->tc0[bS-1] + 1;
     for (i = 2; i; i--, data++)
     {
         p1 = data[-width*2]; p0 = data[-width];
         q0 = data[0]; q1 = data[width];
-        if ( ((u32)ABS(p0-q0) < thresholds->alpha) &&
-             ((u32)ABS(p1-p0) < thresholds->beta)  &&
-             ((u32)ABS(q1-q0) < thresholds->beta) )
+        if ( IN_RANGE(p0 - q0, alphaBias, alphaRange) &&
+             IN_RANGE(p1 - p0, betaBias, betaRange)  &&
+             IN_RANGE(q1 - q0, betaBias, betaRange) )
         {
             delta = CLIP3(-tc, tc, ((((q0 - p0) << 2) +
                       (p1 - q1) + 4) >> 3));
-            p0 = clp[p0 + delta];
-            q0 = clp[q0 - delta];
-            data[-width] = p0;
-            data[  0] = q0;
+            data[-width] = (u8)h264bsdClip255(p0 + delta);
+            data[  0] = (u8)h264bsdClip255(q0 - delta);
         }
     }
 }
@@ -1087,6 +1176,7 @@ void FilterHorChromaEdge(
             can be done if bS is equal for all four edges.
 
 ------------------------------------------------------------------------------*/
+H264BSD_FAST_CODE
 void FilterHorChroma(
   u8 *data,
   u32 bS,
@@ -1098,14 +1188,25 @@ void FilterHorChroma(
 
     i32 delta, tc;
     u32 i;
-    u8 p0, q0, p1, q1;
-    const u8 *clp = h264bsdClip + 512;
+    i32 p0, q0, p1, q1;
+    u32 alpha = thresholds->alpha;
+    u32 beta = thresholds->beta;
+    i32 alphaBias, betaBias;
+    u32 alphaRange, betaRange;
 
 /* Code */
 
     ASSERT(data);
     ASSERT(bS <= 4);
     ASSERT(thresholds);
+
+    if (!alpha || !beta)
+        return;
+
+    alphaBias = (i32)alpha - 1;
+    alphaRange = 2 * alpha - 1;
+    betaBias = (i32)beta - 1;
+    betaRange = 2 * beta - 1;
 
     if (bS < 4)
     {
@@ -1114,16 +1215,14 @@ void FilterHorChroma(
         {
             p1 = data[-width*2]; p0 = data[-width];
             q0 = data[0]; q1 = data[width];
-            if ( ((u32)ABS(p0-q0) < thresholds->alpha) &&
-                 ((u32)ABS(p1-p0) < thresholds->beta)  &&
-                 ((u32)ABS(q1-q0) < thresholds->beta) )
+            if ( IN_RANGE(p0 - q0, alphaBias, alphaRange) &&
+                 IN_RANGE(p1 - p0, betaBias, betaRange)  &&
+                 IN_RANGE(q1 - q0, betaBias, betaRange) )
             {
                 delta = CLIP3(-tc, tc, ((((q0 - p0) << 2) +
                           (p1 - q1) + 4) >> 3));
-                p0 = clp[p0 + delta];
-                q0 = clp[q0 - delta];
-                data[-width] = p0;
-                data[  0] = q0;
+                data[-width] = (u8)h264bsdClip255(p0 + delta);
+                data[  0] = (u8)h264bsdClip255(q0 - delta);
             }
         }
     }
@@ -1133,19 +1232,19 @@ void FilterHorChroma(
         {
             p1 = data[-width*2]; p0 = data[-width];
             q0 = data[0]; q1 = data[width];
-            if ( ((u32)ABS(p0-q0) < thresholds->alpha) &&
-                 ((u32)ABS(p1-p0) < thresholds->beta)  &&
-                 ((u32)ABS(q1-q0) < thresholds->beta) )
+            if ( IN_RANGE(p0 - q0, alphaBias, alphaRange) &&
+                 IN_RANGE(p1 - p0, betaBias, betaRange)  &&
+                 IN_RANGE(q1 - q0, betaBias, betaRange) )
             {
-                    data[-width] = (2 * p1 + p0 + q1 + 2) >> 2;
-                    data[  0] = (2 * q1 + q0 + p1 + 2) >> 2;
+                    data[-width] = (u8)((2 * p1 + p0 + q1 + 2) >> 2);
+                    data[  0] = (u8)((2 * q1 + q0 + p1 + 2) >> 2);
             }
         }
     }
 
 }
 
-
+H264BSD_FAST_CODE
 void GetBoundaryStrengthsA(mbStorage_t *mb, bS_t *bS) {
     bS[4].top = mb->totalCoeff[2] || mb->totalCoeff[0] ? 2 : 0;
     bS[5].top = mb->totalCoeff[3] || mb->totalCoeff[1] ? 2 : 0;
@@ -1184,6 +1283,7 @@ void GetBoundaryStrengthsA(mbStorage_t *mb, bS_t *bS) {
             the macroblock had non-zero value, HANTRO_FALSE otherwise.
 
 ------------------------------------------------------------------------------*/
+H264BSD_FAST_CODE
 u32 GetBoundaryStrengths(mbStorage_t *mb, bS_t *bS, u32 flags)
 {
 

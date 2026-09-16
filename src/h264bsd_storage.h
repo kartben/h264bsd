@@ -108,6 +108,11 @@ typedef struct storage
     /* macroblock specific storages, size determined by image dimensions */
     mbStorage_t *mb;
 
+    /* number of macroblocks decoded (for the first time) in each
+     * macroblock row; a row is deblocked as soon as it and all rows above
+     * it are complete (see h264bsdDecodeSliceData) */
+    u16 *mbsDecodedInRow;
+
     /* flag to store noOutputReordering flag set by the application */
     u32 noReordering;
 

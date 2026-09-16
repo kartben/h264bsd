@@ -39,6 +39,7 @@
 #include "basetype.h"
 #include "h264bsd_transform.h"
 #include "h264bsd_util.h"
+#include "h264bsd_platform.h"
 
 /*------------------------------------------------------------------------------
     2. External compiler flags
@@ -94,6 +95,7 @@ static const u8 qpDiv6[52] = {0,0,0,0,0,0,1,1,1,1,1,1,2,2,2,2,2,2,3,3,3,3,3,3,
             HANTRO_NOK      processed data not in valid range [-512, 511]
 
 ------------------------------------------------------------------------------*/
+H264BSD_FAST_CODE
 u32 h264bsdProcessBlock(i32 *data, u32 qp, u32 skip, u32 coeffMap)
 {
 

@@ -121,19 +121,21 @@ typedef struct
     i16 ver;
 } mv_t;
 
+/* Field widths are chosen to keep the structures (and the per-macroblock
+ * memset/memcpy of them) small: flags and modes fit in a byte. */
 typedef struct
 {
-    u32 prevIntra4x4PredModeFlag[16];
-    u32 remIntra4x4PredMode[16];
+    u8 prevIntra4x4PredModeFlag[16];
+    u8 remIntra4x4PredMode[16];
+    u8 refIdxL0[4];
     u32 intraChromaPredMode;
-    u32 refIdxL0[4];
     mv_t mvdL0[4];
 } mbPred_t;
 
 typedef struct
 {
-    subMbType_e subMbType[4];
-    u32 refIdxL0[4];
+    u8 subMbType[4];    /* subMbType_e */
+    u8 refIdxL0[4];
     mv_t mvdL0[4][4];
 } subMbPred_t;
 
@@ -141,12 +143,12 @@ typedef struct
 {
 #ifdef H264DEC_OMXDL
     u8 posCoefBuf[27*16*3];
-    u8 totalCoeff[27];
-#else
-    i16 totalCoeff[27];
 #endif
-    i32 level[26][16];
+    u8 totalCoeff[27];
     u32 coeffMap[24];
+    /* level must stay the last member: it is not cleared per macroblock,
+     * see h264bsdDecodeMacroblockLayer() */
+    i32 level[26][16];
 } residual_t;
 
 typedef struct
@@ -159,25 +161,25 @@ typedef struct
     residual_t residual;
 } macroblockLayer_t;
 
+/* Per-macroblock state kept for the whole picture (one per macroblock,
+ * i.e. 920 of them for 640x360). Kept compact: 156 bytes on a 32-bit
+ * target, so that the neighbour look-ups of CAVLC, motion vector
+ * prediction and deblocking touch as little memory as possible. */
 typedef struct mbStorage
 {
-    mbType_e mbType;
+    u8 mbType;                      /* mbType_e */
+    u8 disableDeblockingFilterIdc;  /* 0..2 */
+    i8 filterOffsetA;               /* -12..12 */
+    i8 filterOffsetB;               /* -12..12 */
+    u8 qpY;                         /* 0..51 */
+    i8 chromaQpIndexOffset;         /* -12..12 */
+    u16 decoded;                    /* number of times decoded */
     u32 sliceId;
-    u32 disableDeblockingFilterIdc;
-    i32 filterOffsetA;
-    i32 filterOffsetB;
-    u32 qpY;
-    i32 chromaQpIndexOffset;
-#ifdef H264DEC_OMXDL
     u8 totalCoeff[27];
-#else
-    i16 totalCoeff[27];
-#endif
     u8 intra4x4PredMode[16];
-    u32 refPic[4];
+    u8 refPic[4];                   /* reference index per 8x8 partition */
     u8* refAddr[4];
     mv_t mv[16];
-    u32 decoded;
     struct mbStorage *mbA;
     struct mbStorage *mbB;
     struct mbStorage *mbC;

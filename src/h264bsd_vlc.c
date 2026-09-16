@@ -40,6 +40,7 @@
 #include "basetype.h"
 #include "h264bsd_stream.h"
 #include "h264bsd_util.h"
+#include "h264bsd_platform.h"
 
 /*------------------------------------------------------------------------------
     2. External compiler flags
@@ -150,11 +151,8 @@ u32 h264bsdDecodeExpGolombUnsigned(strmData_t *pStrmData, u32 *codeNum)
     /* other code lengths */
     else
     {
-#ifndef H264DEC_NEON
-        numZeros = 4 + h264bsdCountLeadingZeros(bits, 28);
-#else
-        numZeros = h264bsdCountLeadingZeros(bits);
-#endif
+        /* bits < 0x10000000 here, so the count includes the 4 known zeros */
+        numZeros = h264bsdClz32(bits);
         /* all 32 bits are zero */
         if (numZeros == 32)
         {

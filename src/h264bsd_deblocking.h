@@ -53,5 +53,13 @@ void h264bsdFilterPicture(
   image_t *image,
   mbStorage_t *mb);
 
+void h264bsdFilterMbRows(
+  image_t *image,
+  mbStorage_t *mb,
+  u32 firstRow,
+  u32 endRow);
+
+void h264bsdSaveUnfilteredLine(image_t *image, u32 mbRow);
+
 #endif /* #ifdef H264SWDEC_DEBLOCKING_H */
 

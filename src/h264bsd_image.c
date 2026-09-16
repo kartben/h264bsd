@@ -33,9 +33,11 @@
     1. Include headers
 ------------------------------------------------------------------------------*/
 
+#include <stdint.h>
 #include "h264bsd_image.h"
 #include "h264bsd_util.h"
 #include "h264bsd_neighbour.h"
+#include "h264bsd_platform.h"
 
 /*------------------------------------------------------------------------------
     2. External compiler flags
@@ -78,6 +80,7 @@ extern const u8 h264bsdClip[];
 
 ------------------------------------------------------------------------------*/
 #ifndef H264DEC_NEON
+H264BSD_FAST_CODE
 void h264bsdWriteMacroblock(image_t *image, u8 *data)
 {
 
@@ -86,14 +89,13 @@ void h264bsdWriteMacroblock(image_t *image, u8 *data)
     u32 i;
     u32 width;
     u32 *lum, *cb, *cr;
-    u32 *ptr;
-    u32 tmp1, tmp2;
+    const u32 *ptr;
 
 /* Code */
 
     ASSERT(image);
     ASSERT(data);
-    ASSERT(!((u32)data&0x3));
+    ASSERT(!((uintptr_t)data&0x3));
 
     width = image->width;
 
@@ -102,47 +104,116 @@ void h264bsdWriteMacroblock(image_t *image, u8 *data)
     lum = (u32*)image->luma;
     cb = (u32*)image->cb;
     cr = (u32*)image->cr;
-    ASSERT(!((u32)lum&0x3));
-    ASSERT(!((u32)cb&0x3));
-    ASSERT(!((u32)cr&0x3));
+    ASSERT(!((uintptr_t)lum&0x3));
+    ASSERT(!((uintptr_t)cb&0x3));
+    ASSERT(!((uintptr_t)cr&0x3));
 
-    ptr = (u32*)data;
+    ptr = (const u32*)data;
 
+    /* one 16-byte row per iteration; the compiler turns the four word
+     * copies into LDM/STM or LDRD/STRD pairs */
     width *= 4;
     for (i = 16; i ; i--)
     {
-        tmp1 = *ptr++;
-        tmp2 = *ptr++;
-        *lum++ = tmp1;
-        *lum++ = tmp2;
-        tmp1 = *ptr++;
-        tmp2 = *ptr++;
-        *lum++ = tmp1;
-        *lum++ = tmp2;
-        lum += width-4;
+        u32 t0 = ptr[0], t1 = ptr[1], t2 = ptr[2], t3 = ptr[3];
+        lum[0] = t0; lum[1] = t1; lum[2] = t2; lum[3] = t3;
+        ptr += 4;
+        lum += width;
     }
 
     width >>= 1;
     for (i = 8; i ; i--)
     {
-        tmp1 = *ptr++;
-        tmp2 = *ptr++;
-        *cb++ = tmp1;
-        *cb++ = tmp2;
-        cb += width-2;
+        u32 t0 = ptr[0], t1 = ptr[1];
+        cb[0] = t0; cb[1] = t1;
+        ptr += 2;
+        cb += width;
     }
 
     for (i = 8; i ; i--)
     {
-        tmp1 = *ptr++;
-        tmp2 = *ptr++;
-        *cr++ = tmp1;
-        *cr++ = tmp2;
-        cr += width-2;
+        u32 t0 = ptr[0], t1 = ptr[1];
+        cr[0] = t0; cr[1] = t1;
+        ptr += 2;
+        cr += width;
     }
 
 }
 #endif
+/*------------------------------------------------------------------------------
+
+    Function: h264bsdCopyMacroblock
+
+        Functional description:
+            Copy one macroblock (luma and chroma) from a reference picture
+            straight into the current picture, for skipped macroblocks whose
+            motion vector points to full samples. This avoids the round trip
+            through the 384-byte macroblock buffer.
+
+        Inputs:
+            image       current picture; luma/cb/cr must point to the
+                        current macroblock (h264bsdSetCurrImageMbPointers)
+            refData     reference picture data
+            x, y        position of the macroblock in pixels
+            dx, dy      integer motion vector in luma pixels, both even and
+                        such that the source block lies inside the picture
+
+------------------------------------------------------------------------------*/
+H264BSD_FAST_CODE
+void h264bsdCopyMacroblock(image_t *image, const u8 *refData,
+    u32 x, u32 y, i32 dx, i32 dy)
+{
+    u32 width = image->width * 16;
+    u32 picSize = width * image->height * 16;
+    const u8 *src;
+    u8 *dst;
+    u32 i;
+
+    ASSERT(!(dx & 1) && !(dy & 1));
+
+    src = refData + ((i32)y + dy) * (i32)width + (i32)x + dx;
+    dst = image->luma;
+    for (i = 16; i; i--)
+    {
+        u32 t0 = h264bsdLoadU32(src);
+        u32 t1 = h264bsdLoadU32(src + 4);
+        u32 t2 = h264bsdLoadU32(src + 8);
+        u32 t3 = h264bsdLoadU32(src + 12);
+        h264bsdStoreU32(dst, t0);
+        h264bsdStoreU32(dst + 4, t1);
+        h264bsdStoreU32(dst + 8, t2);
+        h264bsdStoreU32(dst + 12, t3);
+        src += width;
+        dst += width;
+    }
+
+    width >>= 1;
+    src = refData + picSize + ((i32)(y >> 1) + (dy >> 1)) * (i32)width +
+          (i32)(x >> 1) + (dx >> 1);
+    dst = image->cb;
+    for (i = 8; i; i--)
+    {
+        u32 t0 = h264bsdLoadU32(src);
+        u32 t1 = h264bsdLoadU32(src + 4);
+        h264bsdStoreU32(dst, t0);
+        h264bsdStoreU32(dst + 4, t1);
+        src += width;
+        dst += width;
+    }
+
+    src += (picSize >> 2) - 8 * width;
+    dst = image->cr;
+    for (i = 8; i; i--)
+    {
+        u32 t0 = h264bsdLoadU32(src);
+        u32 t1 = h264bsdLoadU32(src + 4);
+        h264bsdStoreU32(dst, t0);
+        h264bsdStoreU32(dst + 4, t1);
+        src += width;
+        dst += width;
+    }
+}
+
 #ifndef H264DEC_OMXDL
 /*------------------------------------------------------------------------------
 
@@ -169,6 +240,7 @@ void h264bsdWriteMacroblock(image_t *image, u8 *data)
 
 ------------------------------------------------------------------------------*/
 
+H264BSD_FAST_CODE
 void h264bsdWriteOutputBlocks(image_t *image, u32 mbNum, u8 *data,
         i32 residual[][16])
 {
@@ -184,15 +256,16 @@ void h264bsdWriteOutputBlocks(image_t *image, u32 mbNum, u8 *data,
     u32 block;
     u32 x, y;
     i32 *pRes;
-    i32 tmp1, tmp2, tmp3, tmp4;
+#if !H264BSD_PACKED_KERNELS
     const u8 *clp = h264bsdClip + 512;
+#endif
 
 /* Code */
 
     ASSERT(image);
     ASSERT(data);
     ASSERT(mbNum < image->width * image->height);
-    ASSERT(!((u32)data&0x3));
+    ASSERT(!((uintptr_t)data&0x3));
 
     /* Image size in macroblocks */
     picWidth = image->width;
@@ -219,24 +292,23 @@ void h264bsdWriteOutputBlocks(image_t *image, u32 mbNum, u8 *data,
         tmp = data + y*16 + x;
         imageBlock = lum + y*picWidth + x;
 
-        ASSERT(!((u32)tmp&0x3));
-        ASSERT(!((u32)imageBlock&0x3));
+        ASSERT(!((uintptr_t)tmp&0x3));
+        ASSERT(!((uintptr_t)imageBlock&0x3));
 
         if (IS_RESIDUAL_EMPTY(pRes))
         {
             /*lint -e826 */
-            i32 *in32 = (i32*)tmp;
-            i32 *out32 = (i32*)imageBlock;
+            const u32 *in32 = (const u32*)tmp;
+            u32 *out32 = (u32*)imageBlock;
+            u32 t0, t1;
 
             /* Residual is zero => copy prediction block to output */
-            tmp1 = *in32;  in32 += 4;
-            tmp2 = *in32;  in32 += 4;
-            *out32 = tmp1; out32 += picWidth/4;
-            *out32 = tmp2; out32 += picWidth/4;
-            tmp1 = *in32;  in32 += 4;
-            tmp2 = *in32;
-            *out32 = tmp1; out32 += picWidth/4;
-            *out32 = tmp2;
+            t0 = in32[0]; t1 = in32[4];
+            out32[0] = t0; out32 += picWidth/4;
+            out32[0] = t1; out32 += picWidth/4;
+            t0 = in32[8]; t1 = in32[12];
+            out32[0] = t0; out32 += picWidth/4;
+            out32[0] = t1;
         }
         else
         {
@@ -247,6 +319,12 @@ void h264bsdWriteOutputBlocks(image_t *image, u32 mbNum, u8 *data,
              * Process four pixels in a loop */
             for (i = 4; i; i--)
             {
+#if H264BSD_PACKED_KERNELS
+                h264bsdStoreU32(imageBlock,
+                    h264bsdAddResidualWord(h264bsdLoadU32(tmp), pRes));
+                pRes += 4;
+#else
+                i32 tmp1, tmp2, tmp3, tmp4;
                 tmp1 = tmp[0];
                 tmp2 = *pRes++;
                 tmp3 = tmp[1];
@@ -262,8 +340,9 @@ void h264bsdWriteOutputBlocks(image_t *image, u32 mbNum, u8 *data,
                 tmp4 = *pRes++;
                 imageBlock[2] = (u8)tmp1;
                 tmp3 = clp[tmp3 + tmp4];
-                tmp += 16;
                 imageBlock[3] = (u8)tmp3;
+#endif
+                tmp += 16;
                 imageBlock += picWidth;
             }
         }
@@ -293,24 +372,23 @@ void h264bsdWriteOutputBlocks(image_t *image, u32 mbNum, u8 *data,
         tmp += y*8 + x;
         imageBlock += y*picWidth + x;
 
-        ASSERT(!((u32)tmp&0x3));
-        ASSERT(!((u32)imageBlock&0x3));
+        ASSERT(!((uintptr_t)tmp&0x3));
+        ASSERT(!((uintptr_t)imageBlock&0x3));
 
         if (IS_RESIDUAL_EMPTY(pRes))
         {
             /*lint -e826 */
-            i32 *in32 = (i32*)tmp;
-            i32 *out32 = (i32*)imageBlock;
+            const u32 *in32 = (const u32*)tmp;
+            u32 *out32 = (u32*)imageBlock;
+            u32 t0, t1;
 
             /* Residual is zero => copy prediction block to output */
-            tmp1 = *in32;  in32 += 2;
-            tmp2 = *in32;  in32 += 2;
-            *out32 = tmp1; out32 += picWidth/4;
-            *out32 = tmp2; out32 += picWidth/4;
-            tmp1 = *in32;  in32 += 2;
-            tmp2 = *in32;
-            *out32 = tmp1; out32 += picWidth/4;
-            *out32 = tmp2;
+            t0 = in32[0]; t1 = in32[2];
+            out32[0] = t0; out32 += picWidth/4;
+            out32[0] = t1; out32 += picWidth/4;
+            t0 = in32[4]; t1 = in32[6];
+            out32[0] = t0; out32 += picWidth/4;
+            out32[0] = t1;
         }
         else
         {
@@ -319,6 +397,12 @@ void h264bsdWriteOutputBlocks(image_t *image, u32 mbNum, u8 *data,
 
             for (i = 4; i; i--)
             {
+#if H264BSD_PACKED_KERNELS
+                h264bsdStoreU32(imageBlock,
+                    h264bsdAddResidualWord(h264bsdLoadU32(tmp), pRes));
+                pRes += 4;
+#else
+                i32 tmp1, tmp2, tmp3, tmp4;
                 tmp1 = tmp[0];
                 tmp2 = *pRes++;
                 tmp3 = tmp[1];
@@ -334,8 +418,9 @@ void h264bsdWriteOutputBlocks(image_t *image, u32 mbNum, u8 *data,
                 tmp4 = *pRes++;
                 imageBlock[2] = (u8)tmp1;
                 tmp3 = clp[tmp3 + tmp4];
-                tmp += 8;
                 imageBlock[3] = (u8)tmp3;
+#endif
+                tmp += 8;
                 imageBlock += picWidth;
             }
         }
