@@ -54,6 +54,11 @@ task :test_640x360 => [test_app] do |t|
   sh "#{test_app} ../test/test_640x360.h264"
 end
 
+# Print a hash of every decoded picture (compare with cortex-m/ QEMU run)
+task :hashes => [test_app] do |t|
+  sh "#{test_app} -h #{ENV['STREAM'] || '../test/test_640x360.h264'}"
+end
+
 # Run test application decoding repeatedy until stopped
 task :test_repeat => [test_app] do |t|
   sh "#{test_app} -r ../test/test_1920x1080.h264"
