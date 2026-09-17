@@ -1,0 +1,4 @@
+name: h264bsd
+build:
+  cmake: zephyr
+  kconfig: zephyr/Kconfig

@@ -1,0 +1,43 @@
+# h264bsd - H.264 baseline profile software decoder
+#
+# Copyright (C) 2009 The Android Open Source Project
+# Modified for use by h264bsd standalone library
+# SPDX-License-Identifier: Apache-2.0
+
+config H264BSD
+	bool "h264bsd H.264 baseline software video decoder"
+	help
+	  Software H.264 (AVC) baseline profile decoder. The hot loops use the
+	  Arm DSP extension (Cortex-M4/M7/M33/M55/M85) through ACLE
+	  intrinsics; other architectures get an equivalent portable C
+	  implementation. The decoder allocates its decoded picture buffers
+	  with malloc(), so a heap large enough for numRefFrames+1 pictures
+	  (width*height*3/2 bytes each) must be available.
+
+if H264BSD
+
+config H264BSD_SPEED_OPTIMIZATIONS
+	bool "Compile the decoder with -O2 even when the image is size-optimized"
+	default y
+	help
+	  Zephyr images are built with -Os by default. The decoder is roughly
+	  15-20% faster when its sources are compiled with -O2, for about
+	  10 KB of additional code.
+
+config H264BSD_FAST_CODE_IN_RAM
+	bool "Run the hottest decoder functions from RAM"
+	depends on ARCH_HAS_RAMFUNC_SUPPORT
+	help
+	  Place the sub-pixel interpolation, reference block copy and
+	  deblocking edge filters in the .ramfunc section so they execute
+	  from SRAM/TCM instead of (slower, cached) flash. Costs roughly
+	  6 KB of RAM.
+
+config H264BSD_PORTABLE_KERNELS
+	bool "Use the portable C kernels instead of the Arm DSP intrinsics"
+	help
+	  Disable the SIMD32/SAT intrinsics and inline assembly and build the
+	  portable C code paths instead. Only useful for debugging; the
+	  output is bit-exact either way.
+
+endif # H264BSD

@@ -37,6 +37,7 @@
 ------------------------------------------------------------------------------*/
 
 #include "h264bsd_util.h"
+#include "h264bsd_platform.h"
 
 /*------------------------------------------------------------------------------
     2. External compiler flags
@@ -83,19 +84,16 @@ u32 h264bsdCountLeadingZeros(u32 value, u32 length)
 
 /* Variables */
 
-    u32 zeros = 0;
-    u32 mask = 1 << (length - 1);
+    u32 zeros;
 
 /* Code */
 
     ASSERT(length <= 32);
 
-    while (mask && !(value & mask))
-    {
-        zeros++;
-        mask >>= 1;
-    }
-    return(zeros);
+    /* left-align the code word and use the CLZ instruction (or the
+     * portable equivalent) instead of scanning bit by bit */
+    zeros = h264bsdClz32(value << (32 - length));
+    return(zeros > length ? length : zeros);
 
 }
 #endif

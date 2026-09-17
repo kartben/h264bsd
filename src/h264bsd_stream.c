@@ -37,6 +37,7 @@
 
 #include "h264bsd_util.h"
 #include "h264bsd_stream.h"
+#include "h264bsd_platform.h"
 
 /*------------------------------------------------------------------------------
     2. External compiler flags
@@ -131,12 +132,12 @@ u32 h264bsdShowBits32(strmData_t *pStrmData)
     /* number of bits left in the buffer */
     bits = (i32)pStrmData->strmBuffSize*8 - (i32)pStrmData->strmBuffReadBits;
 
-    /* at least 32-bits in the buffer */
-    if (bits >= 32)
+    /* at least 32-bits in the buffer: one (unaligned) word load plus a
+     * byte swap, and a fifth byte when the position is not byte aligned */
+    if (H264BSD_LIKELY(bits >= 32))
     {
         u32 bitPosInWord = pStrmData->bitPosInWord;
-        out = ((u32)pStrm[0] << 24) | ((u32)pStrm[1] << 16) |
-              ((u32)pStrm[2] <<  8) | ((u32)pStrm[3]);
+        out = h264bsdLoadBe32(pStrm);
 
         if (bitPosInWord)
         {

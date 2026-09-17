@@ -28,3 +28,12 @@ jobs:
     - uses: mymindstorm/setup-emsdk@v11
     - run: npm install terser -g
     - run: rake ci_build_wasm
+
+  build_cortex_m33:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v3
+    - run: sudo apt-get update && sudo apt-get install -y --no-install-recommends gcc-arm-none-eabi libnewlib-arm-none-eabi qemu-system-arm
+    # decode the 640x360 clip on an emulated Cortex-M33 (QEMU mps2-an505) and
+    # compare every decoded picture against the host build
+    - run: make -C cortex-m check

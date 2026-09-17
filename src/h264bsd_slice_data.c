@@ -35,6 +35,8 @@
 ------------------------------------------------------------------------------*/
 
 #include "h264bsd_slice_data.h"
+#include "h264bsd_deblocking.h"
+#include "h264bsd_platform.h"
 #include "h264bsd_util.h"
 #include "h264bsd_vlc.h"
 
@@ -52,6 +54,10 @@
 
 static void SetMbParams(mbStorage_t *pMb, sliceHeader_t *pSlice, u32 sliceId,
     i32 chromaQpIndexOffset);
+
+#if H264BSD_INLOOP_DEBLOCKING
+static void FilterCompletedRows(storage_t *pStorage, image_t *currImage);
+#endif
 
 /*------------------------------------------------------------------------------
 
@@ -97,6 +103,7 @@ u32 h264bsdDecodeSliceData(strmData_t *pStrmData, storage_t *pStorage,
     u32 currMbAddr;
     u32 moreMbs;
     u32 mbCount;
+    u32 picWidthInMbs;
     i32 qpY;
     macroblockLayer_t *mbLayer;
 
@@ -111,6 +118,7 @@ u32 h264bsdDecodeSliceData(strmData_t *pStrmData, storage_t *pStorage,
     data = (u8*)ALIGN(mbData, 16);
 
     mbLayer = pStorage->mbLayer;
+    picWidthInMbs = pStorage->activeSps->picWidthInMbs;
 
     currMbAddr = pSliceHeader->firstMbInSlice;
     skipRun = 0;
@@ -194,7 +202,18 @@ u32 h264bsdDecodeSliceData(strmData_t *pStrmData, storage_t *pStorage,
         /* increment macroblock count only for macroblocks that were decoded
          * for the first time (redundant slices) */
         if (pStorage->mb[currMbAddr].decoded == 1)
+        {
+            u32 row = currMbAddr / picWidthInMbs;
             mbCount++;
+            /* row complete -> deblock it (and any rows below that were
+             * completed earlier by other slices) while its samples are
+             * still hot, see h264bsdFilterMbRows */
+            pStorage->mbsDecodedInRow[row]++;
+#if H264BSD_INLOOP_DEBLOCKING
+            if (pStorage->mbsDecodedInRow[row] == picWidthInMbs)
+                FilterCompletedRows(pStorage, currImage);
+#endif
+        }
 
         /* keep on processing as long as there is stream data left or
          * processing of macroblocks to be skipped based on the last skipRun is
@@ -230,6 +249,38 @@ u32 h264bsdDecodeSliceData(strmData_t *pStrmData, storage_t *pStorage,
     return(HANTRO_OK);
 
 }
+
+/*------------------------------------------------------------------------------
+
+    Function: FilterCompletedRows
+
+        Functional description:
+            In-loop deblocking: filter every macroblock row that is complete
+            and whose rows above are all complete and already filtered. The
+            bottom sample line of a row is saved before it is filtered so
+            that intra prediction of the next row can still use unfiltered
+            samples (H.264 8.3: intra prediction uses samples "constructed
+            prior to the deblocking filter process").
+
+------------------------------------------------------------------------------*/
+
+#if H264BSD_INLOOP_DEBLOCKING
+void FilterCompletedRows(storage_t *pStorage, image_t *currImage)
+{
+    u32 width = pStorage->activeSps->picWidthInMbs;
+    u32 height = pStorage->activeSps->picHeightInMbs;
+    u32 row = currImage->deblockedRows;
+
+    while (row < height && pStorage->mbsDecodedInRow[row] == width)
+    {
+        if (row + 1 < height)
+            h264bsdSaveUnfilteredLine(currImage, row);
+        h264bsdFilterMbRows(currImage, pStorage->mb, row, row + 1);
+        row++;
+        currImage->deblockedRows = row;
+    }
+}
+#endif /* H264BSD_INLOOP_DEBLOCKING */
 
 /*------------------------------------------------------------------------------
 
@@ -340,6 +391,9 @@ void h264bsdMarkSliceCorrupted(storage_t *pStorage, u32 firstMbInSlice)
              (pStorage->mb[currMbAddr].decoded) )
         {
             pStorage->mb[currMbAddr].decoded--;
+            if (!pStorage->mb[currMbAddr].decoded)
+                pStorage->mbsDecodedInRow[currMbAddr /
+                    pStorage->activeSps->picWidthInMbs]--;
         }
         else
         {

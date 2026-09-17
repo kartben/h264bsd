@@ -52,13 +52,31 @@ typedef struct
     u8 *luma;
     u8 *cb;
     u8 *cr;
+    /* In-loop deblocking state of the picture being decoded: macroblock
+     * rows [0, deblockedRows) have already been filtered. Intra prediction
+     * of the row below a filtered row must use the samples as they were
+     * before filtering, so the bottom luma/chroma line of the most recently
+     * filtered row is kept in unfilteredLine (see h264bsd_deblocking.c). */
+    u32 deblockedRows;
+    u8 *unfilteredLine;
 } image_t;
+
+/* layout of image_t.unfilteredLine for a picture widthInMbs wide: a byte
+ * of padding before each component (for the above-left sample) and four
+ * bytes after (above-right samples of the right-most macroblock) */
+#define UNFILTERED_LINE_LUMA(width)   1
+#define UNFILTERED_LINE_CB(width)     (1 + 16 * (width) + 4 + 1)
+#define UNFILTERED_LINE_CR(width)     (1 + 16 * (width) + 4 + 1 + 8 * (width) + 4 + 1)
+#define UNFILTERED_LINE_SIZE(width)   (3 * 5 + 32 * (width))
 
 /*------------------------------------------------------------------------------
     4. Function prototypes
 ------------------------------------------------------------------------------*/
 
 void h264bsdWriteMacroblock(image_t *image, u8 *data);
+
+void h264bsdCopyMacroblock(image_t *image, const u8 *refData,
+    u32 x, u32 y, i32 dx, i32 dy);
 
 #ifndef H264DEC_OMXDL
 void h264bsdWriteOutputBlocks(image_t *image, u32 mbNum, u8 *data,

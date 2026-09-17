@@ -26,3 +26,8 @@ posix/obj/
 test/*.yuv
 test/raw/
 test/output/
+cortex-m/obj/
+cortex-m/bin/
+cortex-m/lib/
+cortex-m/qemu/tools/*.so
+posix/obj-packed/

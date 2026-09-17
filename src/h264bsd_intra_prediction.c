@@ -62,6 +62,7 @@
 #include "h264bsd_macroblock_layer.h"
 #include "h264bsd_neighbour.h"
 #include "h264bsd_image.h"
+#include "h264bsd_platform.h"
 
 #ifdef H264DEC_OMXDL
 #include "omxtypes.h"
@@ -551,6 +552,7 @@ void h264bsdGetNeighbourPels(image_t *image, u8 *above, u8 *left, u32 mbNum)
     u32 width, picSize;
     u8 *ptr, *tmp;
     u32 row, col;
+    u32 fromLineBuf;
 
 /* Code */
 
@@ -567,6 +569,12 @@ void h264bsdGetNeighbourPels(image_t *image, u8 *above, u8 *left, u32 mbNum)
     row = mbNum / width;
     col = mbNum - row * width;
 
+    /* If the row above has already been deblocked, the samples needed for
+     * intra prediction (constructed prior to the deblocking filter) are the
+     * ones saved in image->unfilteredLine. */
+    fromLineBuf = (row && row - 1 < image->deblockedRows &&
+                   image->unfilteredLine != NULL);
+
     width *= 16;
     ptr = image->data + row * 16 * width  + col * 16;
 
@@ -577,7 +585,11 @@ void h264bsdGetNeighbourPels(image_t *image, u8 *above, u8 *left, u32 mbNum)
      * process */
     if (row)
     {
-        tmp = ptr - (width + 1);
+        if (fromLineBuf)
+            tmp = image->unfilteredLine + UNFILTERED_LINE_LUMA(image->width) +
+                  col * 16 - 1;
+        else
+            tmp = ptr - (width + 1);
         for (i = 21; i--;)
             *above++ = *tmp++;
     }
@@ -594,12 +606,26 @@ void h264bsdGetNeighbourPels(image_t *image, u8 *above, u8 *left, u32 mbNum)
 
     if (row)
     {
-        tmp = ptr - (width + 1);
-        for (i = 9; i--;)
-            *above++ = *tmp++;
-        tmp += (picSize * 64) - 9;
-        for (i = 9; i--;)
-            *above++ = *tmp++;
+        if (fromLineBuf)
+        {
+            tmp = image->unfilteredLine + UNFILTERED_LINE_CB(image->width) +
+                  col * 8 - 1;
+            for (i = 9; i--;)
+                *above++ = *tmp++;
+            tmp = image->unfilteredLine + UNFILTERED_LINE_CR(image->width) +
+                  col * 8 - 1;
+            for (i = 9; i--;)
+                *above++ = *tmp++;
+        }
+        else
+        {
+            tmp = ptr - (width + 1);
+            for (i = 9; i--;)
+                *above++ = *tmp++;
+            tmp += (picSize * 64) - 9;
+            for (i = 9; i--;)
+                *above++ = *tmp++;
+        }
     }
 
     if (col)
@@ -923,6 +949,55 @@ u32 h264bsdIntraChromaPrediction(mbStorage_t *pMb, u8 *data, i32 residual[][16],
           The result (residual + prediction) is stored in 'data'.
 
 ------------------------------------------------------------------------------*/
+#if H264BSD_PACKED_KERNELS
+#ifndef H264DEC_OMXDL
+void h264bsdAddResidual(u8 *data, i32 *residual, u32 blockNum)
+{
+
+/* Variables */
+
+    u32 i;
+    u32 x, y;
+    u32 width;
+    u8 *tmp;
+
+/* Code */
+
+    ASSERT(data);
+    ASSERT(residual);
+    ASSERT(blockNum < 16 + 4 + 4);
+
+    if (IS_RESIDUAL_EMPTY(residual))
+        return;
+
+    RANGE_CHECK_ARRAY(residual, -512, 511, 16);
+
+    if (blockNum < 16)
+    {
+        width = 16;
+        x = h264bsdBlockX[blockNum];
+        y = h264bsdBlockY[blockNum];
+    }
+    else
+    {
+        width = 8;
+        x = h264bsdBlockX[blockNum & 0x3];
+        y = h264bsdBlockY[blockNum & 0x3];
+    }
+
+    /* four pixels per iteration: packed 16-bit lane add + saturation */
+    tmp = data + y*width + x;
+    for (i = 4; i; i--)
+    {
+        h264bsdStoreU32(tmp,
+            h264bsdAddResidualWord(h264bsdLoadU32(tmp), residual));
+        residual += 4;
+        tmp += width;
+    }
+
+}
+#endif
+#else /* H264BSD_PACKED_KERNELS */
 #ifndef H264DEC_OMXDL
 void h264bsdAddResidual(u8 *data, i32 *residual, u32 blockNum)
 {
@@ -988,6 +1063,7 @@ void h264bsdAddResidual(u8 *data, i32 *residual, u32 blockNum)
 
 }
 #endif
+#endif /* H264BSD_PACKED_KERNELS */
 /*------------------------------------------------------------------------------
 
     Function: Intra16x16VerticalPrediction
@@ -1333,7 +1409,6 @@ void IntraChromaPlanePrediction(u8 *data, u8 *above, u8 *left)
     u32 i;
     i32 a, b, c;
     i32 tmp;
-    const u8 *clp = h264bsdClip + 512;
 
 /* Code */
 
@@ -1357,21 +1432,21 @@ void IntraChromaPlanePrediction(u8 *data, u8 *above, u8 *left)
     for (i = 8; i--; a += c)
     {
         tmp = (a - 3 * b);
-        *data++ = clp[tmp>>5];
+        *data++ = (u8)H264BSD_CLIP255_ASR(tmp, 5);
         tmp += b;
-        *data++ = clp[tmp>>5];
+        *data++ = (u8)H264BSD_CLIP255_ASR(tmp, 5);
         tmp += b;
-        *data++ = clp[tmp>>5];
+        *data++ = (u8)H264BSD_CLIP255_ASR(tmp, 5);
         tmp += b;
-        *data++ = clp[tmp>>5];
+        *data++ = (u8)H264BSD_CLIP255_ASR(tmp, 5);
         tmp += b;
-        *data++ = clp[tmp>>5];
+        *data++ = (u8)H264BSD_CLIP255_ASR(tmp, 5);
         tmp += b;
-        *data++ = clp[tmp>>5];
+        *data++ = (u8)H264BSD_CLIP255_ASR(tmp, 5);
         tmp += b;
-        *data++ = clp[tmp>>5];
+        *data++ = (u8)H264BSD_CLIP255_ASR(tmp, 5);
         tmp += b;
-        *data++ = clp[tmp>>5];
+        *data++ = (u8)H264BSD_CLIP255_ASR(tmp, 5);
     }
 
 }

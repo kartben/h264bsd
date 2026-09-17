@@ -472,7 +472,10 @@ u32 h264bsdDecode(storage_t *pStorage, u8 *byteStrm, u32 len, u32 picId,
 
     if (picReady)
     {
-        h264bsdFilterPicture(pStorage->currImage, pStorage->mb);
+        /* rows completed during slice decoding were filtered in-loop,
+         * filter whatever is left (concealed macroblocks, remaining rows) */
+        h264bsdFilterMbRows(pStorage->currImage, pStorage->mb,
+            pStorage->currImage->deblockedRows, pStorage->currImage->height);
 
         h264bsdResetStorage(pStorage);
 
@@ -567,6 +570,8 @@ void h264bsdShutdown(storage_t *pStorage)
     FREE(pStorage->mbLayer);
     FREE(pStorage->mb);
     FREE(pStorage->sliceGroupMap);
+    FREE(pStorage->mbsDecodedInRow);
+    FREE(pStorage->currImage->unfilteredLine);
 
     if(pStorage->conversionBuffer != NULL) FREE(pStorage->conversionBuffer);
 

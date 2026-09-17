@@ -44,7 +44,9 @@
     1. Include headers
 ------------------------------------------------------------------------------*/
 
+#include <stddef.h>
 #include "h264bsd_macroblock_layer.h"
+#include "h264bsd_platform.h"
 #include "h264bsd_slice_header.h"
 #include "h264bsd_util.h"
 #include "h264bsd_vlc.h"
@@ -90,13 +92,22 @@ static u32 DecodeSubMbPred(strmData_t *pStrmData, subMbPred_t *pSubMbPred,
 static u32 DecodeResidual(strmData_t *pStrmData, residual_t *pResidual,
     mbStorage_t *pMb, mbType_e mbType, u32 codedBlockPattern);
 
-#ifdef H264DEC_OMXDL
 static u32 DetermineNc(mbStorage_t *pMb, u32 blockIndex, u8 *pTotalCoeff);
-#else
-static u32 DetermineNc(mbStorage_t *pMb, u32 blockIndex, i16 *pTotalCoeff);
-#endif
 
 static u32 CbpIntra16x16(mbType_e mbType);
+
+/* clear one 16-coefficient block (cheaper than a memset() call per block) */
+H264BSD_INLINE void ClearBlock(i32 *block)
+{
+    u32 i;
+    for (i = 0; i < 16; i += 4)
+    {
+        block[i] = 0;
+        block[i+1] = 0;
+        block[i+2] = 0;
+        block[i+3] = 0;
+    }
+}
 #ifdef H264DEC_OMXDL
 static u32 ProcessIntra4x4Residual(mbStorage_t *pMb, u8 *data, u32 constrainedIntraPred,
                     macroblockLayer_t *mbLayer, const u8 **pSrc, image_t *image);
@@ -150,7 +161,16 @@ u32 h264bsdDecodeMacroblockLayer(strmData_t *pStrmData,
 #ifdef H264DEC_NEON
     h264bsdClearMbLayer(pMbLayer, ((sizeof(macroblockLayer_t) + 63) & ~0x3F));
 #else
-    memset(pMbLayer, 0, sizeof(macroblockLayer_t));
+    /* Clear everything except residual.level (1.6 KB), whose blocks are
+     * zeroed individually just before they are parsed. Blocks that are not
+     * parsed are never read: ProcessResidual() marks them empty or only
+     * uses the DC coefficient it wrote itself. */
+    memset(pMbLayer, 0, offsetof(macroblockLayer_t, residual) +
+                        offsetof(residual_t, level));
+    /* the 2x4 chroma DC values (block 25) are read by ProcessResidual for
+     * every non-skipped macroblock, even when no residual is present */
+    memset(pMbLayer->residual.level[25], 0,
+           8 * sizeof(pMbLayer->residual.level[25][0]));
 #endif
 
     tmp = h264bsdDecodeExpGolombUnsigned(pStrmData, &value);
@@ -717,10 +737,15 @@ u32 DecodeResidual(strmData_t *pStrmData, residual_t *pResidual,
 
     level = pResidual->level;
 
+    /* The CAVLC decoder only writes non-zero coefficients, so every block
+     * is zeroed right before it is parsed (instead of clearing the whole
+     * 1.6 KB level array for every macroblock). */
+
     /* luma DC is at index 24 */
     if (h264bsdMbPartPredMode(mbType) == PRED_MODE_INTRA16x16)
     {
         nc = (i32)DetermineNc(pMb, 0, pResidual->totalCoeff);
+        ClearBlock(level[24]);
         tmp = h264bsdDecodeResidualBlockCavlc(pStrmData, level[24], nc, 16);
         if ((tmp & 0xF) != HANTRO_OK)
             return(tmp);
@@ -740,6 +765,7 @@ u32 DecodeResidual(strmData_t *pStrmData, residual_t *pResidual,
             for (j = 4; j--; blockIndex++)
             {
                 nc = (i32)DetermineNc(pMb, blockIndex, pResidual->totalCoeff);
+                ClearBlock(level[blockIndex]);
                 if (is16x16)
                 {
                     tmp = h264bsdDecodeResidualBlockCavlc(pStrmData,
@@ -761,7 +787,8 @@ u32 DecodeResidual(strmData_t *pStrmData, residual_t *pResidual,
             blockIndex += 4;
     }
 
-    /* chroma DC block are at indices 25 and 26 */
+    /* chroma DC block are at indices 25 and 26 (already cleared by
+     * h264bsdDecodeMacroblockLayer) */
     blockCoded = codedBlockPattern & 0x3;
     if (blockCoded)
     {
@@ -782,6 +809,7 @@ u32 DecodeResidual(strmData_t *pStrmData, residual_t *pResidual,
         for (i = 8; i--;blockIndex++)
         {
             nc = (i32)DetermineNc(pMb, blockIndex, pResidual->totalCoeff);
+            ClearBlock(level[blockIndex]);
             tmp = h264bsdDecodeResidualBlockCavlc(pStrmData,
                 level[blockIndex] + 1, nc, 15);
             if ((tmp & 0xF) != HANTRO_OK)
@@ -804,11 +832,7 @@ u32 DecodeResidual(strmData_t *pStrmData, residual_t *pResidual,
           Returns the nC of a block.
 
 ------------------------------------------------------------------------------*/
-#ifdef H264DEC_OMXDL
 u32 DetermineNc(mbStorage_t *pMb, u32 blockIndex, u8 *pTotalCoeff)
-#else
-u32 DetermineNc(mbStorage_t *pMb, u32 blockIndex, i16 *pTotalCoeff)
-#endif
 {
 /*lint -e702 */
 /* Variables */
@@ -983,7 +1007,7 @@ u32 h264bsdDecodeMacroblock(mbStorage_t *pMb, macroblockLayer_t *pMbLayer,
     ASSERT(mbNum < currImage->width*currImage->height);
 
     mbType = pMbLayer->mbType;
-    pMb->mbType = mbType;
+    pMb->mbType = (u8)mbType;
 
     pMb->decoded++;
 
@@ -992,11 +1016,7 @@ u32 h264bsdDecodeMacroblock(mbStorage_t *pMb, macroblockLayer_t *pMbLayer,
     if (mbType == I_PCM)
     {
         u8 *pData = (u8*)data;
-#ifdef H264DEC_OMXDL
         u8 *tot = pMb->totalCoeff;
-#else
-        i16 *tot = pMb->totalCoeff;
-#endif
         i32 *lev = pMbLayer->residual.level[0];
 
         pMb->qpY = 0;
@@ -1346,7 +1366,7 @@ u32 ProcessResidual(mbStorage_t *pMb, i32 residualLevel[][16], u32 *coeffMap)
     u32 chromaQp;
     i32 (*blockData)[16];
     i32 (*blockDc)[16];
-    i16 *totalCoeff;
+    u8 *totalCoeff;
     i32 *chromaDc;
     const u32 *dcCoeffIdx;
 

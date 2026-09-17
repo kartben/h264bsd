@@ -10,10 +10,12 @@
 
 #include "../src/h264bsd_decoder.h"
 #include "../src/h264bsd_util.h"
+#include "../test/frame_hash.h"
 
 static char* outputPath = NULL;
 static char* comparePath = NULL;
 static int repeatTest = 0;
+static int printHashes = 0;
 
 void createContentBuffer(char* contentPath, u8** pContentBuffer, size_t* pContentSize) {
   struct stat sb;
@@ -154,6 +156,12 @@ void decodeContent (u8* contentBuffer, size_t contentSize) {
         ++numPics;
         if (outputPath) savePic(pic, width, height, numPics);
         if (comparePath) totalErrors += comparePics(pic, width, height, numPics);
+        if (printHashes) {
+          /* hash of the full (uncropped) decoded picture, see test/frame_hash.h */
+          u32 fullWidth = h264bsdPicWidth(&dec) * 16;
+          u32 fullHeight = h264bsdPicHeight(&dec) * 16;
+          printf("pic %d hash 0x%08x\n", numPics, frameHash(pic, fullWidth * fullHeight * 3 / 2));
+        }
         break;
       case H264BSD_HDRS_RDY:
         h264bsdCroppingParams(&dec, &croppingFlag, &left, &width, &top, &height);
@@ -184,7 +192,7 @@ void decodeContent (u8* contentBuffer, size_t contentSize) {
 
 int main(int argc, char *argv[]) {
   int c;
-  while ((c = getopt (argc, argv, "ro:c:")) != -1) {
+  while ((c = getopt (argc, argv, "rho:c:")) != -1) {
     switch (c) {
       case 'o':
         outputPath = optarg;
@@ -195,13 +203,16 @@ int main(int argc, char *argv[]) {
       case 'r':
         repeatTest = 1;
         break;
+      case 'h':
+        printHashes = 1;
+        break;
       default:
         abort();
     }
   }
 
   if (argc < 2) {
-    fprintf(stderr, "Usage: %s [-r] [-c <compare.yuv>] [-o <output.yuv>] <test_video.h264>\n", argv[0]);
+    fprintf(stderr, "Usage: %s [-r] [-h] [-c <compare.yuv>] [-o <output.yuv>] <test_video.h264>\n", argv[0]);
     exit(1);
   }
 

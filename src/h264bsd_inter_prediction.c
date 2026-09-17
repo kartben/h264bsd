@@ -41,6 +41,7 @@
 ------------------------------------------------------------------------------*/
 
 #include "h264bsd_inter_prediction.h"
+#include "h264bsd_image.h"
 #include "h264bsd_neighbour.h"
 #include "h264bsd_util.h"
 #include "h264bsd_reconstruct.h"
@@ -391,6 +392,28 @@ u32 h264bsdInterPrediction(mbStorage_t *pMb, macroblockLayer_t *pMbLayer,
             if (MvPrediction16x16(pMb, &pMbLayer->mbPred, dpb) != HANTRO_OK)
                 return(HANTRO_NOK);
             refImage.data = pMb->refAddr[0];
+            if (pMb->mbType == P_Skip)
+            {
+                /* skipped macroblock with a full-sample motion vector (very
+                 * often zero) pointing inside the picture: copy the
+                 * reference block straight into the current picture */
+                i32 dx = pMb->mv[0].hor;
+                i32 dy = pMb->mv[0].ver;
+                if (((dx | dy) & 0x7) == 0)
+                {
+                    i32 px = (i32)col + (dx >> 2);
+                    i32 py = (i32)row + (dy >> 2);
+                    if (px >= 0 && py >= 0 &&
+                        px + 16 <= (i32)refImage.width * 16 &&
+                        py + 16 <= (i32)refImage.height * 16)
+                    {
+                        if (pMb->decoded <= 1)
+                            h264bsdCopyMacroblock(currImage, refImage.data,
+                                col, row, dx >> 2, dy >> 2);
+                        return(HANTRO_OK);
+                    }
+                }
+            }
             h264bsdPredictSamples(data, pMb->mv, &refImage, col, row, 0, 0,
                 16, 16);
             break;

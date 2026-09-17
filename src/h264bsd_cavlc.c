@@ -38,6 +38,7 @@
 
 #include "h264bsd_cavlc.h"
 #include "h264bsd_util.h"
+#include "h264bsd_platform.h"
 
 /*------------------------------------------------------------------------------
     2. External compiler flags
@@ -475,46 +476,15 @@ u32 DecodeLevelPrefix(u32 bits)
 
 /* Variables */
 
-    u32 numZeros;
-
 /* Code */
 
-    if (bits >= 0x8000)
-        numZeros = 0;
-    else if (bits >= 0x4000)
-        numZeros = 1;
-    else if (bits >= 0x2000)
-        numZeros = 2;
-    else if (bits >= 0x1000)
-        numZeros = 3;
-    else if (bits >= 0x0800)
-        numZeros = 4;
-    else if (bits >= 0x0400)
-        numZeros = 5;
-    else if (bits >= 0x0200)
-        numZeros = 6;
-    else if (bits >= 0x0100)
-        numZeros = 7;
-    else if (bits >= 0x0080)
-        numZeros = 8;
-    else if (bits >= 0x0040)
-        numZeros = 9;
-    else if (bits >= 0x0020)
-        numZeros = 10;
-    else if (bits >= 0x0010)
-        numZeros = 11;
-    else if (bits >= 0x0008)
-        numZeros = 12;
-    else if (bits >= 0x0004)
-        numZeros = 13;
-    else if (bits >= 0x0002)
-        numZeros = 14;
-    else if (bits >= 0x0001)
-        numZeros = 15;
-    else /* more than 15 zeros encountered which is an error */
+    /* bits holds the next 16 stream bits right-aligned; the number of
+     * leading zeros within those 16 bits is CLZ(bits) - 16. More than 15
+     * zeros (bits == 0) is an error. */
+    if (bits == 0)
         return(VLC_NOT_FOUND);
 
-    return(numZeros);
+    return(h264bsdClz32(bits) - 16);
 
 }
 
@@ -746,6 +716,7 @@ u32 DecodeRunBefore(u32 bits, u32 zerosLeft)
 
 ------------------------------------------------------------------------------*/
 
+H264BSD_FAST_CODE
 u32 h264bsdDecodeResidualBlockCavlc(
   strmData_t *pStrmData,
   i32 *coeffLevel,

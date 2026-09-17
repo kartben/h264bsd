@@ -343,14 +343,26 @@ u32 h264bsdActivateParamSets(storage_t *pStorage, u32 ppsId, u32 isIdr)
 
         FREE(pStorage->mb);
         FREE(pStorage->sliceGroupMap);
+        FREE(pStorage->mbsDecodedInRow);
+        FREE(pStorage->currImage->unfilteredLine);
 
         ALLOCATE(pStorage->mb, pStorage->picSizeInMbs, mbStorage_t);
         ALLOCATE(pStorage->sliceGroupMap, pStorage->picSizeInMbs, u32);
-        if (pStorage->mb == NULL || pStorage->sliceGroupMap == NULL)
+        ALLOCATE(pStorage->mbsDecodedInRow,
+                 pStorage->activeSps->picHeightInMbs, u16);
+        ALLOCATE(pStorage->currImage->unfilteredLine,
+                 UNFILTERED_LINE_SIZE(pStorage->activeSps->picWidthInMbs), u8);
+        if (pStorage->mb == NULL || pStorage->sliceGroupMap == NULL ||
+            pStorage->mbsDecodedInRow == NULL ||
+            pStorage->currImage->unfilteredLine == NULL)
             return(MEMORY_ALLOCATION_ERROR);
 
         memset(pStorage->mb, 0,
             pStorage->picSizeInMbs * sizeof(mbStorage_t));
+        memset(pStorage->mbsDecodedInRow, 0,
+            pStorage->activeSps->picHeightInMbs *
+            sizeof(*pStorage->mbsDecodedInRow));
+        pStorage->currImage->deblockedRows = 0;
 
         h264bsdInitMbNeighbours(pStorage->mb,
             pStorage->activeSps->picWidthInMbs,
@@ -457,6 +469,13 @@ void h264bsdResetStorage(storage_t *pStorage)
         pStorage->mb[i].sliceId = 0;
         pStorage->mb[i].decoded = 0;
     }
+
+    /* in-loop deblocking bookkeeping for the next picture */
+    pStorage->currImage->deblockedRows = 0;
+    if (pStorage->mbsDecodedInRow && pStorage->activeSps)
+        memset(pStorage->mbsDecodedInRow, 0,
+               pStorage->activeSps->picHeightInMbs *
+               sizeof(*pStorage->mbsDecodedInRow));
 
 }
 
