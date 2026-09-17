@@ -131,6 +131,55 @@ Memory placement hints for a real SoC:
 * Enable the instruction cache / flash accelerator of the SoC and compile the
   decoder with `-O2` (Zephyr's default `-Os` costs 15-20%).
 
+#### What to expect at 800x480
+
+The same tooling can estimate the frame rate for a given clip and memory
+system: `make -C cortex-m memprofile STREAM=<clip>` profiles the instruction
+mix and the traffic to the picture buffers (with a cache model) and
+`cortex-m/tools/fps_model.py` turns that into cycles per frame for several
+external-RAM scenarios. For 800x480 clips made from the 1080p test source
+with x264 (baseline profile, GOP 40, 25 fps source material):
+
+| clip (x264 settings) | Mbit/s | decoder instructions / frame | pictures in DPB |
+|---|---|---|---|
+| `ref=3`, CRF 23 | 0.9 | 9.3 M | 4 x 563 KB |
+| `ref=1`, 1.4 Mbit/s | 1.4 | 10.0 M | 2 x 563 KB |
+| `ref=1`, 0.7 Mbit/s | 0.7 | 8.5 M | 2 x 563 KB |
+| `ref=1`, 1.4 Mbit/s, `no-deblock=1` | 1.4 | 7.1 M | 2 x 563 KB |
+| `ref=1`, 1.4 Mbit/s, `no-deblock=1:subme=0` (full-sample motion) | 1.4 | 5.1 M | 2 x 563 KB |
+
+Estimated frames per second for the 1.4 Mbit/s `ref=1` clip (10.0 M
+instructions and 12.3 M CPU cycles per frame with the mix-based Cortex-M33
+timing model, ~0.9 MB read and ~0.6 MB written to the picture buffers per
+frame). The RAM rows assume the picture buffers are in that memory and
+everything else is in zero-wait-state SRAM:
+
+| picture buffers in | 160 MHz | 250 MHz | 300 MHz |
+|---|---|---|---|
+| internal SRAM (zero wait state) | 13 | 20 | 24 |
+| 16-bit SDRAM @100 MHz, 16 KB data cache | 11 | 16 | 18 |
+| Octal-SPI PSRAM / HyperRAM 200 MHz DDR, 16 KB data cache | 11 | 16 | 18 |
+| Octal-SPI PSRAM / HyperRAM, no data cache | 7 | 8.6 | 9 |
+| Quad-SPI PSRAM 104 MHz, 16 KB data cache | 7.5 | 9.5 | 10 |
+| Quad-SPI PSRAM 104 MHz, no data cache | 5 | 5.7 | 6 |
+
+With the encoder's deblocking filter off the same rows are about 40% higher
+(18.6 / 29 / 35 fps from internal SRAM), and with full-sample motion
+estimation on top about 90% higher (25 / 39 / 46 fps). The assumptions are
+documented in `fps_model.py` (loads 1.5 cycles, taken branches 2, everything
+else 1 cycle; RAM latencies 130 ns / 200 ns per random word / 32-byte line
+for Octal-SPI, 240 ns / 830 ns for Quad-SPI, 70 ns / 200 ns for SDRAM);
+treat the CPU part as +/-15% and measure on the real board.
+
+Memory at 800x480: 563 KB per picture, `num_ref_frames + 1` pictures
+(1.1 MB with `ref=1`, 2.25 MB with x264's default `ref=3`), 234 KB of
+per-macroblock state that is best kept in internal SRAM, 2.5 KB of stack
+and 55 KB of code. A display pipeline adds to this: converting YUV 4:2:0 to
+RGB565 in software costs about as much as decoding a frame, so use a 2D
+accelerator or a YUV-capable display controller, and remember that an LCD
+refreshing from the same external RAM (800x480 RGB565 at 60 Hz is 46 MB/s)
+takes bandwidth away from the decoder.
+
 Building and testing on the emulated Cortex-M33 needs `gcc-arm-none-eabi`,
 newlib and `qemu-system-arm`:
 
@@ -139,8 +188,16 @@ make -C cortex-m           # lib/libh264bsd.a + bin/test_h264bsd_m33.elf
 make -C cortex-m check     # decode test/test_640x360.h264 on QEMU and compare
                            # every picture with the host build
 make -C cortex-m plugin profile   # per-function instruction profile (needs
-                           # glib-2.0 dev headers and qemu-plugin.h)
+                           # glib-2.0 dev headers and qemu-plugin.h from the
+                           # QEMU sources: QEMU_PLUGIN_INC=<dir containing it>)
+make -C cortex-m memprofile STREAM=<clip>   # memory traffic + fps estimate
 ```
+
+The 800x480 clips above were made with
+`ffmpeg -i test/test_1920x1080.h264 -vf "crop=1800:1080,scale=800:480"
+-pix_fmt yuv420p -c:v libx264 -profile:v baseline -x264-params
+keyint=40:ref=1 -b:v 1500k -f rawvideo out.h264` (add `:no-deblock=1` or
+`:subme=0` to the x264 parameters for the cheaper-to-decode variants).
 
 #### Zephyr RTOS
 

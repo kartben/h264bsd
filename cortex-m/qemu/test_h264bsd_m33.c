@@ -7,6 +7,7 @@
  * to prove the Cortex-M build is bit-exact.
  */
 #include <stdlib.h>
+#include <stdint.h>
 #include <string.h>
 #include "semihost.h"
 #include "h264bsd_decoder.h"
@@ -35,9 +36,46 @@ static u8 *loadFile(const char *path, u32 *size)
     return buf;
 }
 
+/* Print where the decoder's buffers live (address ranges), so that a
+ * memory-traffic profiler can attribute accesses to picture buffers,
+ * macroblock bookkeeping and the input stream. */
+static void reportRange(const char *name, const void *p, u32 bytes)
+{
+    sh_puts("alloc "); sh_puts(name); sh_puts(" ");
+    sh_put_hex((u32)(uintptr_t)p); sh_puts("-");
+    sh_put_hex((u32)(uintptr_t)p + bytes); sh_puts(" ");
+    sh_put_uint(bytes); sh_puts(" bytes\n");
+}
+
+static void reportAllocations(storage_t *dec, const u8 *stream, u32 streamLen)
+{
+    u32 picSizeInMbs = dec->picSizeInMbs;
+    u32 i, n = dec->dpb->dpbSize + 1;
+    const u8 *lo = NULL, *hi = NULL;
+
+    for (i = 0; i < n; i++)
+    {
+        const u8 *d = dec->dpb->buffer[i].data;
+        if (!d) continue;
+        if (!lo || d < lo) lo = d;
+        if (!hi || d + picSizeInMbs * 384 > hi) hi = d + picSizeInMbs * 384;
+    }
+    sh_puts("dpb pictures: "); sh_put_uint(n); sh_puts(" x ");
+    sh_put_uint(picSizeInMbs * 384); sh_puts(" bytes\n");
+    if (lo) reportRange("pictures", lo, (u32)(hi - lo));
+    reportRange("mbstorage", dec->mb, picSizeInMbs * sizeof(mbStorage_t));
+    reportRange("mblayer", dec->mbLayer, sizeof(macroblockLayer_t));
+    reportRange("linebuf", dec->currImage->unfilteredLine,
+                UNFILTERED_LINE_SIZE(dec->activeSps->picWidthInMbs));
+    reportRange("stream", stream, streamLen);
+    reportRange("storage", dec, sizeof(storage_t));
+}
+
 int main(int argc, char **argv)
 {
     const char *path = argc > 0 ? argv[argc - 1] : NULL;
+    u32 hash = 1;
+    int a;
     u8 *stream, *byteStrm, *pic;
     u32 len, readBytes, picId, isIdr, numErrMbs;
     u32 width = 0, height = 0, numPics = 0;
@@ -47,6 +85,12 @@ int main(int argc, char **argv)
         sh_puts("usage: pass the input file with -semihosting-config ...,arg=<file.h264>\n");
         return 2;
     }
+
+    /* "nohash" as an earlier argument skips the per-picture hash, for
+     * memory-traffic profiling of the decoder alone */
+    for (a = 0; a < argc - 1; a++)
+        if (!strcmp(argv[a], "nohash"))
+            hash = 0;
 
     stream = loadFile(path, &len);
     if (!stream) {
@@ -71,9 +115,14 @@ int main(int argc, char **argv)
         case H264BSD_PIC_RDY:
             pic = h264bsdNextOutputPicture(dec, &picId, &isIdr, &numErrMbs);
             numPics++;
-            sh_puts("pic "); sh_put_uint(numPics);
-            sh_puts(" hash 0x"); sh_put_hex(frameHash(pic, width * height * 3 / 2));
-            sh_puts("\n");
+            if (numPics == 1)
+                reportAllocations(dec, stream, len + readBytes);
+            if (hash)
+            {
+                sh_puts("pic "); sh_put_uint(numPics);
+                sh_puts(" hash 0x"); sh_put_hex(frameHash(pic, width * height * 3 / 2));
+                sh_puts("\n");
+            }
             break;
         case H264BSD_HDRS_RDY:
             width = h264bsdPicWidth(dec) * 16;
