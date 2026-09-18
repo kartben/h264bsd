@@ -150,6 +150,33 @@
     free((ptr)); (ptr) = NULL; \
 }
 
+/* The decoded pictures are far larger than everything else the decoder holds
+ * put together, and on a part whose fast memory cannot take them they are the
+ * one thing that has to live somewhere else. Name a pair of functions of your
+ * own to keep them apart; by default they go where the rest goes. */
+#ifndef H264BSD_PICTURE_MALLOC
+#define H264BSD_PICTURE_MALLOC malloc
+#endif
+#ifndef H264BSD_PICTURE_FREE
+#define H264BSD_PICTURE_FREE free
+#endif
+
+#define ALLOCATE_PICTURE(ptr, count, type) \
+{ \
+    (ptr) = H264BSD_PICTURE_MALLOC((count) * sizeof(type)); \
+}
+
+#define FREE_PICTURE(ptr) \
+{ \
+    H264BSD_PICTURE_FREE((ptr)); (ptr) = NULL; \
+}
+
+/* Named rather than included, so a function of the caller's own needs no
+ * header of ours. Where the names are still malloc and free this repeats what
+ * stdlib.h already says. */
+void *H264BSD_PICTURE_MALLOC(size_t size);
+void H264BSD_PICTURE_FREE(void *ptr);
+
 #define ALIGN(ptr, bytePos) \
         (ptr + ( ((bytePos - (uintptr_t)ptr) & (bytePos - 1)) / sizeof(*ptr) ))
 

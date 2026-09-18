@@ -18,6 +18,17 @@ if(CONFIG_H264BSD)
     zephyr_library_compile_definitions(free=${CONFIG_H264BSD_FREE})
   endif()
 
+  # The pictures are named separately so they can be placed separately; left
+  # alone they follow the redirection above like everything else.
+  if(NOT CONFIG_H264BSD_PICTURE_MALLOC STREQUAL "malloc")
+    zephyr_library_compile_definitions(
+      H264BSD_PICTURE_MALLOC=${CONFIG_H264BSD_PICTURE_MALLOC})
+  endif()
+  if(NOT CONFIG_H264BSD_PICTURE_FREE STREQUAL "free")
+    zephyr_library_compile_definitions(
+      H264BSD_PICTURE_FREE=${CONFIG_H264BSD_PICTURE_FREE})
+  endif()
+
   # The decoder predates these warnings and is not ours to reflow
   zephyr_library_compile_options(
     -Wno-sign-compare

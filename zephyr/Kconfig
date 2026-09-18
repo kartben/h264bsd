@@ -20,6 +20,22 @@ config H264BSD_MALLOC
 	  800x480. Name a function of your own here to place them somewhere
 	  other than the libc heap.
 
+config H264BSD_PICTURE_MALLOC
+	string "Name of the function the decoder allocates pictures through"
+	default "malloc"
+	help
+	  The decoded pictures dwarf everything else the decoder holds, and a
+	  part whose fast memory cannot take them can still keep the rest of
+	  the decoder's state there. Name a function of your own to place the
+	  pictures on their own; the default sends them wherever
+	  H264BSD_MALLOC sends the rest.
+
+config H264BSD_PICTURE_FREE
+	string "Name of the function the decoder releases pictures through"
+	default "free"
+	help
+	  Releases what H264BSD_PICTURE_MALLOC returned.
+
 config H264BSD_FREE
 	string "Name of the function the decoder releases memory through"
 	default "free"
