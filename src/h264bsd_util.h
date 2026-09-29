@@ -34,6 +34,7 @@
 ------------------------------------------------------------------------------*/
 
 #include <stdint.h>
+#include <string.h>
 #include "basetype.h"
 #include "h264bsd_cfg.h"
 #include "h264bsd_stream.h"
