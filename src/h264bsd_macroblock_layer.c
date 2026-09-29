@@ -45,6 +45,8 @@
     1. Include headers
 ------------------------------------------------------------------------------*/
 
+#include <stddef.h>
+
 #include "h264bsd_macroblock_layer.h"
 #include "h264bsd_slice_header.h"
 #include "h264bsd_util.h"
@@ -152,7 +154,19 @@ u32 h264bsdDecodeMacroblockLayer(strmData_t *pStrmData,
 #ifdef H264DEC_NEON
     h264bsdClearMbLayer(pMbLayer, ((sizeof(macroblockLayer_t) + 63) & ~0x3F));
 #else
-    memset(pMbLayer, 0, sizeof(macroblockLayer_t));
+    {
+        /* Only what a later stage may read before it is written: the levels
+         * of a block are cleared when the block is parsed (the layer is 2 KB,
+         * most of it levels, and clearing it whole for every macroblock
+         * costs more than parsing one when it lives in slow memory). The
+         * chroma dc levels are read whether or not chroma is coded. */
+        h264bsdClearWords(pMbLayer, offsetof(macroblockLayer_t, residual) / 4);
+        h264bsdClearWords(pMbLayer->residual.totalCoeff,
+            sizeof(pMbLayer->residual.totalCoeff) / 4);
+        h264bsdClearWords(pMbLayer->residual.coeffMap,
+            sizeof(pMbLayer->residual.coeffMap) / 4);
+        h264bsdClearWords(pMbLayer->residual.level[25], 8);
+    }
 #endif
 
     tmp = h264bsdDecodeExpGolombUnsigned(pStrmData, &value);
@@ -1392,6 +1406,27 @@ u32 ProcessIntra4x4Residual(mbStorage_t *pMb,
 
 /*------------------------------------------------------------------------------
 
+    Function: ClearEmptyBlocks
+
+        Functional description:
+          The four 4x4 blocks of an 8x8 transform are read together, and
+          the parser leaves a block without coefficients as it was.
+
+------------------------------------------------------------------------------*/
+
+static void ClearEmptyBlocks(i32 blockData[][16], const u8 *totalCoeff)
+{
+    u32 i;
+
+    for (i = 0; i < 4; i++)
+    {
+        if (!totalCoeff[i])
+            h264bsdClearWords(blockData[i], 16);
+    }
+}
+
+/*------------------------------------------------------------------------------
+
     Function: ProcessResidual
 
         Functional description:
@@ -1433,6 +1468,11 @@ u32 ProcessResidual(mbStorage_t *pMb, i32 residualLevel[][16], u32 *coeffMap,
         {
             h264bsdProcessLumaDc(*blockDc, pMb->qpY);
         }
+        else
+        {
+            /* the dc block was parsed empty and left as it was */
+            h264bsdClearWords(*blockDc, 16);
+        }
         dcCoeffIdx = dcCoeffIndex;
 
         for (i = 16; i--; blockData++, totalCoeff++, coeffMap++)
@@ -1457,6 +1497,7 @@ u32 ProcessResidual(mbStorage_t *pMb, i32 residualLevel[][16], u32 *coeffMap,
             if (totalCoeff[0] || totalCoeff[1] || totalCoeff[2] ||
                 totalCoeff[3])
             {
+                ClearEmptyBlocks(blockData, totalCoeff);
                 if (h264bsdProcessBlock8x8(blockData, pMb->qpY,
                         h264bsdFlatList8x8) != HANTRO_OK)
                     return(HANTRO_NOK);
@@ -1549,11 +1590,16 @@ u32 ProcessResidualScaled(mbStorage_t *pMb, i32 residualLevel[][16],
     {
         if (totalCoeff[24])
             h264bsdProcessLumaDcScaled(*blockDc, pMb->qpY, lists[0][0]);
+        else
+            h264bsdClearWords(*blockDc, 16);
         for (i = 0; i < 16; i++, blockData++, totalCoeff++)
         {
             (*blockData)[0] = (*blockDc)[dcCoeffIndex[i]];
             if ((*blockData)[0] || *totalCoeff)
             {
+                /* the ac levels of a block that was not parsed are stale */
+                if (!*totalCoeff)
+                    h264bsdClearWords(*blockData + 1, 15);
                 if (h264bsdProcessBlockScaled(*blockData, pMb->qpY, 1,
                         lists[0]) != HANTRO_OK)
                     return(HANTRO_NOK);
@@ -1569,6 +1615,7 @@ u32 ProcessResidualScaled(mbStorage_t *pMb, i32 residualLevel[][16],
             if (totalCoeff[0] || totalCoeff[1] || totalCoeff[2] ||
                 totalCoeff[3])
             {
+                ClearEmptyBlocks(blockData, totalCoeff);
                 if (h264bsdProcessBlock8x8(blockData, pMb->qpY,
                         scaling->list8x8[IS_INTRA_MB(*pMb) ? 0 : 1]) !=
                     HANTRO_OK)
@@ -1614,6 +1661,8 @@ u32 ProcessResidualScaled(mbStorage_t *pMb, i32 residualLevel[][16],
         (*blockData)[0] = residualLevel[25][i];
         if ((*blockData)[0] || *totalCoeff)
         {
+            if (!*totalCoeff)
+                h264bsdClearWords(*blockData + 1, 15);
             if (h264bsdProcessBlockScaled(*blockData, chromaQp[i >> 2], 1,
                     lists[1 + (i >> 2)]) != HANTRO_OK)
                 return(HANTRO_NOK);

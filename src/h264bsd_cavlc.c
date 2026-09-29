@@ -780,8 +780,6 @@ u32 h264bsdDecodeResidualBlockCavlc(
     ASSERT(maxNumCoeff == 4 || maxNumCoeff == 15 || maxNumCoeff == 16);
     ASSERT(VLC_NOT_FOUND != END_OF_STREAM);
 
-    /* assume that coeffLevel array has been "cleaned" by caller */
-
     BUFFER_INIT();
 
     BUFFER_SHOW(bit, 16);
@@ -794,6 +792,17 @@ u32 h264bsdDecodeResidualBlockCavlc(
     if (totalCoeff > maxNumCoeff)
         return(HANTRO_NOK);
     trailingOnes = TRAILING_ONES(tmp);
+
+    /* The levels that stay zero are not written below, so the block is
+     * cleared first. A block without coefficients is left alone: nothing
+     * reads its levels, except the chroma dc blocks, which are read
+     * together, and the blocks of an 8x8 transform, which the caller
+     * clears. */
+    if (totalCoeff != 0 || maxNumCoeff == 4)
+    {
+        for (i = 0; i < maxNumCoeff; i++)
+            coeffLevel[i] = 0;
+    }
 
     if (totalCoeff != 0)
     {

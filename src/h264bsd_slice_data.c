@@ -163,7 +163,7 @@ u32 h264bsdDecodeSliceData(strmData_t *pStrmData, storage_t *pStorage,
                 if (skipRun)
                 {
                     prevSkipped = HANTRO_TRUE;
-                    memset(&mbLayer->mbPred, 0, sizeof(mbPred_t));
+                    h264bsdClearWords(&mbLayer->mbPred, sizeof(mbPred_t) / 4);
                     /* mark current macroblock skipped */
                     mbLayer->mbType = P_Skip;
                 }
