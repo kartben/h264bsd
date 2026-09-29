@@ -9,6 +9,10 @@ if(CONFIG_H264BSD)
   zephyr_library_sources(${h264bsd_sources})
   zephyr_include_directories(${h264bsd_src})
 
+  if(CONFIG_H264BSD_PIE)
+    zephyr_library_compile_definitions(H264BSD_PIE)
+  endif()
+
   # The decoder reaches for malloc both through its own ALLOCATE macro and
   # directly in a few places, so the redirection has to be on the names.
   if(NOT CONFIG_H264BSD_MALLOC STREQUAL "malloc")
@@ -35,4 +39,12 @@ if(CONFIG_H264BSD)
     -Wno-unused-but-set-variable
     -Wno-unused-variable
   )
+
+  # The ESP32-S3 vector kernels are assembled as a library of their own, so
+  # that whatever options an application gives the C sources stay away from
+  # the assembler.
+  if(CONFIG_H264BSD_PIE)
+    zephyr_library_named(h264bsd_pie)
+    zephyr_library_sources(${h264bsd_src}/h264bsd_pie.S)
+  endif()
 endif()

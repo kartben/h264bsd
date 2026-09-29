@@ -11,9 +11,25 @@ menuconfig H264BSD
 	  without B slices or weighted prediction.
 
 	  On an Armv8.1-M core with Helium the filters and interpolators are
-	  vectorised automatically; everywhere else the plain C is built.
+	  vectorised automatically; the ESP32-S3 has H264BSD_PIE; everywhere
+	  else the plain C is built.
 
 if H264BSD
+
+config H264BSD_PIE
+	bool "Use the ESP32-S3 vector instructions"
+	depends on SOC_SERIES_ESP32S3
+	default y
+	help
+	  Run the pixel kernels (motion compensated interpolation and the
+	  writing of macroblocks) on the Processor Instruction Extensions of
+	  the ESP32-S3, coprocessor 3, sixteen bytes at a time. The kernels
+	  are checked against the C code when the decoder is initialised and
+	  are only used when they agree with it.
+
+	  The kernel does not save the vector registers on a context switch,
+	  so each macroblock's prediction runs with the scheduler locked;
+	  nothing that runs in an interrupt may use the unit.
 
 config H264BSD_MALLOC
 	string "Name of the function the decoder allocates through"

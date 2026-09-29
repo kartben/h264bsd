@@ -38,6 +38,7 @@
 #include "h264bsd_util.h"
 #include "h264bsd_reconstruct.h"
 #include "h264bsd_dpb.h"
+#include "h264bsd_pie.h"
 
 /*------------------------------------------------------------------------------
     2. External compiler flags
@@ -329,6 +330,7 @@ u32 ConcealMb(mbStorage_t *pMb, image_t *currImage, u32 row, u32 col,
         refImage.data = refData;
         if (refImage.data)
         {
+            H264BSD_SIMD_ENTER();
 #ifndef H264DEC_OMXDL
             h264bsdPredictSamples(data, &mv, &refImage, col*16, row*16,
                 0, 0, 16, 16);
@@ -338,6 +340,7 @@ u32 ConcealMb(mbStorage_t *pMb, image_t *currImage, u32 row, u32 col,
                     0x00001010, pFill);
 #endif
             h264bsdWriteMacroblock(currImage, data);
+            H264BSD_SIMD_LEAVE();
 
             return(HANTRO_OK);
         }
@@ -582,7 +585,9 @@ u32 ConcealMb(mbStorage_t *pMb, image_t *currImage, u32 row, u32 col,
         mbPos += width * height * 64;
     }
 
+    H264BSD_SIMD_ENTER();
     h264bsdWriteMacroblock(currImage, data);
+    H264BSD_SIMD_LEAVE();
 
     return(HANTRO_OK);
 

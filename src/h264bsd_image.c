@@ -36,6 +36,7 @@
 #include "h264bsd_image.h"
 #include "h264bsd_util.h"
 #include "h264bsd_neighbour.h"
+#include "h264bsd_pie.h"
 
 /*------------------------------------------------------------------------------
     2. External compiler flags
@@ -95,6 +96,16 @@ void h264bsdWriteMacroblock(image_t *image, u8 *data)
     ASSERT(data);
     ASSERT(!((u32)data&0x3));
 
+#ifdef H264BSD_HAS_PIE
+    if (h264bsdPieOn && !((uintptr_t)image->luma & 15) &&
+        !((uintptr_t)image->cb & 7) && !((uintptr_t)image->cr & 7) &&
+        !((uintptr_t)data & 15))
+    {
+        h264bsdPieWriteMb(data, image->luma, image->cb, image->cr,
+            image->width * 16);
+        return;
+    }
+#endif
     width = image->width;
 
     /*lint -save -e826 lum, cb and cr used to copy 4 bytes at the time, disable

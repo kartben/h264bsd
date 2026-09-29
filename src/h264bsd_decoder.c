@@ -43,6 +43,7 @@
     1. Include headers
 ------------------------------------------------------------------------------*/
 #include "h264bsd_decoder.h"
+#include "h264bsd_pie.h"
 #include "h264bsd_nal_unit.h"
 #include "h264bsd_byte_stream.h"
 #include "h264bsd_seq_param_set.h"
@@ -96,6 +97,9 @@ u32 h264bsdInit(storage_t *pStorage, u32 noOutputReordering)
 
     ASSERT(pStorage);
 
+#ifdef H264BSD_HAS_PIE
+    h264bsdPieInit();
+#endif
     h264bsdInitStorage(pStorage);
 
     /* allocate mbLayer to be next multiple of 64 to enable use of

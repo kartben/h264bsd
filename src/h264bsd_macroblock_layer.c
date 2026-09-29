@@ -55,6 +55,7 @@
 #include "h264bsd_transform.h"
 #include "h264bsd_intra_prediction.h"
 #include "h264bsd_inter_prediction.h"
+#include "h264bsd_pie.h"
 
 #ifdef H264DEC_OMXDL
 #include "omxtypes.h"
@@ -1075,7 +1076,9 @@ u32 h264bsdDecodeMacroblock(mbStorage_t *pMb, macroblockLayer_t *pMbLayer,
             for (tmp = 16; tmp--;)
                 *pData++ = (u8)(*lev++);
         }
+        H264BSD_SIMD_ENTER();
         h264bsdWriteMacroblock(currImage, (u8*)data);
+        H264BSD_SIMD_LEAVE();
 
         return(HANTRO_OK);
     }
@@ -1171,18 +1174,22 @@ u32 h264bsdDecodeMacroblock(mbStorage_t *pMb, macroblockLayer_t *pMbLayer,
 
         h264bsdWriteMacroblock(currImage, data);
 #else
+        /* The vector unit's registers are not saved across a thread switch,
+         * so the prediction and write-out of a macroblock run as one
+         * uninterruptible stretch. */
+        H264BSD_SIMD_ENTER();
         if (h264bsdMbPartPredMode(mbType) != PRED_MODE_INTER)
         {
             tmp = h264bsdIntraPrediction(pMb, pMbLayer, currImage, mbNum,
                 constrainedIntraPredFlag, (u8*)data);
-            if (tmp != HANTRO_OK) return (tmp);
         }
         else
         {
             tmp = h264bsdInterPrediction(pMb, pMbLayer, dpb, mbNum,
                 currImage, (u8*)data);
-            if (tmp != HANTRO_OK) return (tmp);
         }
+        H264BSD_SIMD_LEAVE();
+        if (tmp != HANTRO_OK) return (tmp);
 #endif
     }
 

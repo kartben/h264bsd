@@ -31,12 +31,15 @@
     1. Include headers
 ------------------------------------------------------------------------------*/
 
+#include <string.h>
+
 #include "basetype.h"
 #include "h264bsd_reconstruct.h"
 #include "h264bsd_macroblock_layer.h"
 #include "h264bsd_image.h"
 #include "h264bsd_util.h"
 #include "h264bsd_mve.h"
+#include "h264bsd_pie.h"
 
 #ifdef H264DEC_OMXDL
 #include "omxtypes.h"
@@ -153,6 +156,26 @@ void h264bsdInterpolateChromaHor(
 
     val = 8 - xFrac;
 
+#ifdef H264BSD_HAS_PIE
+    if (h264bsdPieOn)
+    {
+        u8 coefBuf[32];
+        u8 *coef = (u8*)ALIGN(coefBuf, 16);
+
+        memset(coef, 0, 16);
+        coef[0] = (u8)(val << 3);
+        coef[1] = (u8)(xFrac << 3);
+        for (comp = 0; comp <= 1; comp++)
+        {
+            h264bsdPieChroma(pRef + (comp * height + (u32)y0) * width + (u32)x0,
+                width, predPartChroma + comp * 8 * 8,
+                H264BSD_PIE_WH(chromaPartWidth, chromaPartHeight), coef,
+                h264bsdPieK);
+        }
+
+        return;
+    }
+#endif
     #ifdef H264BSD_HAS_MVE
     {
         u32 comp2, yy;
@@ -267,6 +290,26 @@ void h264bsdInterpolateChromaVer(
 
     val = 8 - yFrac;
 
+#ifdef H264BSD_HAS_PIE
+    if (h264bsdPieOn)
+    {
+        u8 coefBuf[32];
+        u8 *coef = (u8*)ALIGN(coefBuf, 16);
+
+        memset(coef, 0, 16);
+        coef[0] = (u8)(val << 3);
+        coef[2] = (u8)(yFrac << 3);
+        for (comp = 0; comp <= 1; comp++)
+        {
+            h264bsdPieChroma(pRef + (comp * height + (u32)y0) * width + (u32)x0,
+                width, predPartChroma + comp * 8 * 8,
+                H264BSD_PIE_WH(chromaPartWidth, chromaPartHeight), coef,
+                h264bsdPieK);
+        }
+
+        return;
+    }
+#endif
     #ifdef H264BSD_HAS_MVE
     {
         u32 comp2, yy;
@@ -381,6 +424,28 @@ void h264bsdInterpolateChromaHorVer(
     valX = 8 - xFrac;
     valY = 8 - yFrac;
 
+#ifdef H264BSD_HAS_PIE
+    if (h264bsdPieOn)
+    {
+        u8 coefBuf[32];
+        u8 *coef = (u8*)ALIGN(coefBuf, 16);
+
+        memset(coef, 0, 16);
+        coef[0] = (u8)(valX * valY);
+        coef[1] = (u8)(xFrac * valY);
+        coef[2] = (u8)(valX * yFrac);
+        coef[3] = (u8)(xFrac * yFrac);
+        for (comp = 0; comp <= 1; comp++)
+        {
+            h264bsdPieChroma(ref + (comp * height + (u32)y0) * width + (u32)x0,
+                width, predPartChroma + comp * 8 * 8,
+                H264BSD_PIE_WH(chromaPartWidth, chromaPartHeight), coef,
+                h264bsdPieK);
+        }
+
+        return;
+    }
+#endif
     #ifdef H264BSD_HAS_MVE
     {
         u32 comp2, yy;
@@ -580,6 +645,14 @@ void h264bsdInterpolateVerHalf(
     ptrC = ref + width;
     ptrV = ptrC + 5*width;
 
+#ifdef H264BSD_HAS_PIE
+    if (h264bsdPieOn)
+    {
+        h264bsdPieLumaV(ref, width, mb, H264BSD_PIE_WH(partWidth, partHeight),
+            0, h264bsdPieK);
+        return;
+    }
+#endif
 #ifdef H264BSD_HAS_MVE
     for (i = 0; i < partHeight; i++)
     {
@@ -717,6 +790,14 @@ void h264bsdInterpolateVerQuarter(
     /* Pointer to integer sample position, either M or R */
     ptrInt = ptrC + (2+verOffset)*width;
 
+#ifdef H264BSD_HAS_PIE
+    if (h264bsdPieOn)
+    {
+        h264bsdPieLumaV(ref, width, mb, H264BSD_PIE_WH(partWidth, partHeight),
+            verOffset + 1, h264bsdPieK);
+        return;
+    }
+#endif
     #ifdef H264BSD_HAS_MVE
     {
         u32 rr, xx;
@@ -865,6 +946,14 @@ void h264bsdInterpolateHorHalf(
 
     ptrJ = ref + 5;
 
+#ifdef H264BSD_HAS_PIE
+    if (h264bsdPieOn)
+    {
+        h264bsdPieLumaH(ref, width, mb, H264BSD_PIE_WH(partWidth, partHeight),
+            0, h264bsdPieK);
+        return;
+    }
+#endif
     #ifdef H264BSD_HAS_MVE
     {
         u32 rr, xx;
@@ -1003,6 +1092,14 @@ void h264bsdInterpolateHorQuarter(
 
     ptrJ = ref + 5;
 
+#ifdef H264BSD_HAS_PIE
+    if (h264bsdPieOn)
+    {
+        h264bsdPieLumaH(ref, width, mb, H264BSD_PIE_WH(partWidth, partHeight),
+            horOffset + 1, h264bsdPieK);
+        return;
+    }
+#endif
     #ifdef H264BSD_HAS_MVE
     {
         u32 rr, xx;
@@ -1158,6 +1255,14 @@ void h264bsdInterpolateHorVerQuarter(
     ref += (u32)y0 * width + (u32)x0;
 
     /* ptrJ points to either J or Q, depending on vertical offset */
+#ifdef H264BSD_HAS_PIE
+    if (h264bsdPieOn)
+    {
+        h264bsdPieLumaHV(ref, width, mb, H264BSD_PIE_WH(partWidth, partHeight),
+            horVerOffset, h264bsdPieK);
+        return;
+    }
+#endif
 #ifdef H264BSD_HAS_MVE
     {
         u32 rr, xx;
@@ -1378,6 +1483,14 @@ void h264bsdInterpolateMidHalf(
 
     ref += (u32)y0 * width + (u32)x0;
 
+#ifdef H264BSD_HAS_PIE
+    if (h264bsdPieOn)
+    {
+        h264bsdPieLumaMid(ref, width, mb, H264BSD_PIE_WH(partWidth, partHeight),
+            NULL, h264bsdPieK);
+        return;
+    }
+#endif
     b1 = table;
     ptrJ = ref + 5;
 
@@ -1565,6 +1678,20 @@ void h264bsdInterpolateMidVerQuarter(
 
     ref += (u32)y0 * width + (u32)x0;
 
+#ifdef H264BSD_HAS_PIE
+    if (h264bsdPieOn)
+    {
+        /* j averaged with the horizontal half sample of row y or y + 1 */
+        u8 avgBuf[16*16 + 15];
+        u8 *avg = (u8*)ALIGN(avgBuf, 16);
+
+        h264bsdPieLumaH(ref + (2 + verOffset) * width, width, avg,
+            H264BSD_PIE_WH(partWidth, partHeight), 0, h264bsdPieK);
+        h264bsdPieLumaMid(ref, width, mb, H264BSD_PIE_WH(partWidth, partHeight),
+            avg, h264bsdPieK);
+        return;
+    }
+#endif
     b1 = table;
     ptrJ = ref + 5;
 
@@ -1770,6 +1897,20 @@ void h264bsdInterpolateMidHorQuarter(
 
     ref += (u32)y0 * width + (u32)x0;
 
+#ifdef H264BSD_HAS_PIE
+    if (h264bsdPieOn)
+    {
+        /* j averaged with the vertical half sample of column x or x + 1 */
+        u8 avgBuf[16*16 + 15];
+        u8 *avg = (u8*)ALIGN(avgBuf, 16);
+
+        h264bsdPieLumaV(ref + 2 + horOffset, width, avg,
+            H264BSD_PIE_WH(partWidth, partHeight), 0, h264bsdPieK);
+        h264bsdPieLumaMid(ref, width, mb, H264BSD_PIE_WH(partWidth, partHeight),
+            avg, h264bsdPieK);
+        return;
+    }
+#endif
     h1 = table + tableWidth;
     ptrC = ref + width;
     ptrV = ptrC + 5*width;
@@ -2409,6 +2550,19 @@ void h264bsdFillBlock(
     xstop = x0 + (i32)blockWidth;
     ystop = y0 + (i32)blockHeight;
 
+#ifdef H264BSD_HAS_PIE
+    /* A block wholly inside the picture is a plain copy */
+    if (h264bsdPieOn && x0 >= 0 && y0 >= 0 && xstop <= (i32)width &&
+        ystop <= (i32)height &&
+        (blockWidth == 16 || blockWidth == 8 || blockWidth == 4 ||
+         blockWidth == 2) &&
+        ((uintptr_t)fill & (blockWidth - 1)) == 0)
+    {
+        h264bsdPieCopy(ref + (u32)y0 * width + (u32)x0, width, fill,
+            fillScanLength, H264BSD_PIE_WH(blockWidth, blockHeight));
+        return;
+    }
+#endif
     /* Choose correct function whether overfilling on left-edge or right-edge
      * is needed or not */
     if (x0 >= 0 && xstop <= (i32)width)
