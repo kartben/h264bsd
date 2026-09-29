@@ -58,6 +58,7 @@
 #include "h264bsd_intra_prediction.h"
 #include "h264bsd_inter_prediction.h"
 #include "h264bsd_pie.h"
+#include "h264bsd_preload.h"
 
 #ifdef H264DEC_OMXDL
 #include "omxtypes.h"
@@ -1184,6 +1185,7 @@ u32 h264bsdDecodeMacroblock(mbStorage_t *pMb, macroblockLayer_t *pMbLayer,
         /* The vector unit's registers are not saved across a thread switch,
          * so the prediction and write-out of a macroblock run as one
          * uninterruptible stretch. */
+        h264bsdPreloadPoll();
         H264BSD_SIMD_ENTER();
         if (h264bsdMbPartPredMode(mbType) != PRED_MODE_INTER)
         {

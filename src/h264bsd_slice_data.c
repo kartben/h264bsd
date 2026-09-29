@@ -35,6 +35,7 @@
 ------------------------------------------------------------------------------*/
 
 #include "h264bsd_slice_data.h"
+#include "h264bsd_preload.h"
 #include "h264bsd_util.h"
 #include "h264bsd_vlc.h"
 
@@ -146,6 +147,32 @@ u32 h264bsdDecodeSliceData(strmData_t *pStrmData, storage_t *pStorage,
             pStorage->slice->sliceId, pStorage->activePps->chromaQpIndexOffset,
             pStorage->activePps->chromaQpIndexOffset2);
 
+        /* The rows of the pictures, and the macroblocks, that a macroblock
+         * row reads and writes are fetched into the cache ahead of it, when
+         * the port can: those of the slice's first row as it starts, then
+         * those of the next row from the middle of each row, which leaves
+         * the fetches the time to land. */
+        if (currMbAddr == pSliceHeader->firstMbInSlice ||
+            currMbAddr % currImage->width == currImage->width / 2)
+        {
+            u32 row = currMbAddr / currImage->width;
+            const u8 *ref = NULL;
+
+            if (currMbAddr != pSliceHeader->firstMbInSlice)
+                row++;
+            if (row < currImage->height)
+            {
+                if (!IS_I_SLICE(pSliceHeader->sliceType) &&
+                    pStorage->dpb->list[0] != NULL)
+                    ref = pStorage->dpb->list[0]->data;
+                h264bsdPreloadRow(currImage, ref, currImage->data, row);
+                h264bsdPreloadRegion(pStorage->mb + row * currImage->width,
+                    currImage->width * sizeof(mbStorage_t));
+            }
+        }
+        else
+            h264bsdPreloadPoll();
+
         if (!IS_I_SLICE(pSliceHeader->sliceType))
         {
             if (!prevSkipped)
@@ -191,6 +218,7 @@ u32 h264bsdDecodeSliceData(strmData_t *pStrmData, storage_t *pStorage,
             }
         }
 
+        h264bsdPreloadPoll();
         tmp = h264bsdDecodeMacroblock(pStorage->mb + currMbAddr, mbLayer,
             currImage, pStorage->dpb, &qpY, currMbAddr,
             pStorage->activePps->constrainedIntraPredFlag, data, scaling);

@@ -52,6 +52,16 @@ config H264BSD_STATIC_LAYER
 	  layer in a static buffer in internal RAM instead. Only one decoder
 	  instance at a time can then be initialised.
 
+config H264BSD_ESP32S3_PRELOAD
+	bool "Fetch the rows of the pictures into the data cache ahead of time"
+	depends on SOC_SERIES_ESP32S3 && ESP_SPIRAM
+	default y
+	help
+	  Asks the data cache, through the ROM's manual preload, to fetch the
+	  rows of the reference and current pictures that a macroblock row
+	  reads and writes while the previous row is decoded, so that the
+	  decoder waits less on the PSRAM.
+
 config H264BSD_MALLOC
 	string "Name of the function the decoder allocates through"
 	default "malloc"

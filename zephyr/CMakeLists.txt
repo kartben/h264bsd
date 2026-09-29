@@ -15,6 +15,8 @@ if(CONFIG_H264BSD)
 
   zephyr_library_compile_definitions_ifdef(CONFIG_H264BSD_STATIC_LAYER
     H264BSD_STATIC_LAYER)
+  zephyr_library_compile_definitions_ifdef(CONFIG_H264BSD_ESP32S3_PRELOAD
+    H264BSD_ESP32S3_PRELOAD)
 
   if(NOT CONFIG_H264BSD_HOT_SECTION STREQUAL "")
     zephyr_library_compile_definitions(

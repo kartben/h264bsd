@@ -43,6 +43,7 @@
     1. Include headers
 ------------------------------------------------------------------------------*/
 #include "h264bsd_decoder.h"
+#include "h264bsd_preload.h"
 #include "h264bsd_pie.h"
 #include "h264bsd_nal_unit.h"
 #include "h264bsd_byte_stream.h"
@@ -491,6 +492,7 @@ u32 h264bsdDecode(storage_t *pStorage, u8 *byteStrm, u32 len, u32 picId,
         H264BSD_PROF_START(t0);
         h264bsdFilterPicture(pStorage->currImage, pStorage->mb);
         H264BSD_PROF_STOP(t0, H264BSD_PROF_DEBLOCK);
+        h264bsdPreloadFlush();
 
         h264bsdResetStorage(pStorage);
 
