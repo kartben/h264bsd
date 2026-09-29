@@ -80,7 +80,7 @@ static const u32 lumaIndex[16] = {   0,   4,  64,  68,
                                    136, 140, 200, 204 };
 #endif
 /* mapping of dc coefficients array to luma blocks */
-static const u32 dcCoeffIndex[16] =
+static const u32 dcCoeffIndex[16] H264BSD_HOT =
     {0, 1, 4, 5, 2, 3, 6, 7, 8, 9, 12, 13, 10, 11, 14, 15};
 
 /*------------------------------------------------------------------------------

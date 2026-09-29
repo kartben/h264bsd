@@ -13,6 +13,11 @@ if(CONFIG_H264BSD)
   # the way the decoder does and read h264bsdPieOn
   zephyr_compile_definitions_ifdef(CONFIG_H264BSD_PIE H264BSD_PIE)
 
+  if(NOT CONFIG_H264BSD_HOT_SECTION STREQUAL "")
+    zephyr_library_compile_definitions(
+      H264BSD_HOT_SECTION="${CONFIG_H264BSD_HOT_SECTION}")
+  endif()
+
   # The decoder reaches for malloc both through its own ALLOCATE macro and
   # directly in a few places, so the redirection has to be on the names.
   if(NOT CONFIG_H264BSD_MALLOC STREQUAL "malloc")

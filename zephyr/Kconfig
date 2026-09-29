@@ -31,6 +31,18 @@ config H264BSD_PIE
 	  so each macroblock's prediction runs with the scheduler locked;
 	  nothing that runs in an interrupt may use the unit.
 
+config H264BSD_HOT_SECTION
+	string "Section for the tables read at every block"
+	default ".dram1" if SOC_FAMILY_ESPRESSIF_ESP32
+	default ""
+	help
+	  The decoder's constant tables normally sit in flash with the code.
+	  The ones read for every block or macroblock, about 6 KB (the CAVLC
+	  code tables, the deblocking thresholds, the neighbour maps and the
+	  like), can be placed in a section of internal RAM instead, so that
+	  they are not fetched again and again through a cache that the
+	  pictures are streaming through. Empty leaves them with the code.
+
 config H264BSD_MALLOC
 	string "Name of the function the decoder allocates through"
 	default "malloc"

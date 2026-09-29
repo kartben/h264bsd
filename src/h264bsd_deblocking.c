@@ -76,12 +76,14 @@
 /*lint -e701 -e702 */
 
 /* array of alpha values, from the standard */
-static const u8 alphas[52] = {0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,4,4,5,6,7,8,9,10,
+static const u8 alphas[52] H264BSD_HOT =
+    {0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,4,4,5,6,7,8,9,10,
     12,13,15,17,20,22,25,28,32,36,40,45,50,56,63,71,80,90,101,113,127,144,162,
     182,203,226,255,255};
 
 /* array of beta values, from the standard */
-static const u8 betas[52] = {0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,2,2,2,3,3,3,3,4,4,
+static const u8 betas[52] H264BSD_HOT =
+    {0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,2,2,2,3,3,3,3,4,4,
     4,6,6,7,7,8,8,9,9,10,10,11,11,12,12,13,13,14,14,15,15,16,16,17,17,18,18};
 
 
@@ -89,7 +91,7 @@ static const u8 betas[52] = {0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,2,2,2,3,3,3,3,4,4,
 #ifndef H264DEC_OMXDL
 /* array of tc0 values, from the standard, each triplet corresponds to a
  * column in the table. Indexing goes as tc0[indexA][bS-1] */
-static const u8 tc0[52][3] = {
+static const u8 tc0[52][3] H264BSD_HOT = {
     {0,0,0},{0,0,0},{0,0,0},{0,0,0},{0,0,0},{0,0,0},{0,0,0},{0,0,0},
     {0,0,0},{0,0,0},{0,0,0},{0,0,0},{0,0,0},{0,0,0},{0,0,0},{0,0,0},
     {0,0,0},{0,0,1},{0,0,1},{0,0,1},{0,0,1},{0,1,1},{0,1,1},{1,1,1},
@@ -122,7 +124,7 @@ static const u8 tc0[52][5] = {
 
 #ifndef H264DEC_OMXDL
 /* mapping of raster scan block index to 4x4 block index */
-static const u32 mb4x4Index[16] =
+static const u32 mb4x4Index[16] H264BSD_HOT =
     {0, 1, 4, 5, 2, 3, 6, 7, 8, 9, 12, 13, 10, 11, 14, 15};
 
 typedef struct {

@@ -24,7 +24,7 @@
 u32 h264bsdPieOn;
 
 /* The layout is shared with h264bsd_pie.S (the K_* offsets there) */
-const u8 h264bsdPieK[112] __attribute__((aligned(16))) = {
+const u8 h264bsdPieK[112] __attribute__((aligned(16))) H264BSD_HOT = {
     /* 0: the 6-tap coefficients as signed byte lanes */
     1, (u8)-5, 20, 20, (u8)-5, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
     /* 16: the sign flip of a pixel */

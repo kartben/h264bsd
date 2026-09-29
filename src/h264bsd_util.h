@@ -102,6 +102,18 @@ static inline void h264bsdCopyWords(void *dst, const void *src, u32 words)
         *d++ = *s++;
 }
 
+/* The tables read for every block or macroblock: a port that has a section
+ * in fast memory names it in H264BSD_HOT_SECTION, a string, and they are
+ * placed there instead of with the other constants (the ESP32-S3 reads its
+ * constants through the same small data cache as the pictures). */
+#ifdef H264BSD_HOT_SECTION
+#define H264BSD_HOT_STR(x) #x
+#define H264BSD_HOT_SEC(sec, id) __attribute__((section(sec "." H264BSD_HOT_STR(id))))
+#define H264BSD_HOT H264BSD_HOT_SEC(H264BSD_HOT_SECTION, __COUNTER__)
+#else
+#define H264BSD_HOT
+#endif
+
 /* Optional cycle profile of the decoding stages (H264BSD_PROFILE on an
  * Xtensa target): each stage accumulates its cycles and its calls. */
 #if defined(H264BSD_PROFILE) && defined(__XTENSA__)

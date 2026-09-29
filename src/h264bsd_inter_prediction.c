@@ -82,7 +82,7 @@ static void GetInterNeighbour(u32 sliceId, mbStorage_t *nMb,
     interNeighbour_t *n, u32 index);
 static void GetPredictionMv(mv_t *mv, interNeighbour_t *a, u32 refIndex);
 
-static const neighbour_t N_A_SUB_PART[4][4][4] = {
+static const neighbour_t N_A_SUB_PART[4][4][4] H264BSD_HOT = {
     { { {MB_A,5}, {MB_NA,0}, {MB_NA,0}, {MB_NA,0} },
       { {MB_A,5}, {MB_A,7}, {MB_NA,0}, {MB_NA,0} },
       { {MB_A,5}, {MB_CURR,0}, {MB_NA,0}, {MB_NA,0} },
@@ -103,7 +103,7 @@ static const neighbour_t N_A_SUB_PART[4][4][4] = {
       { {MB_CURR,9}, {MB_CURR,12}, {MB_NA,0}, {MB_NA,0} },
       { {MB_CURR,9}, {MB_CURR,12}, {MB_CURR,11}, {MB_CURR,14} } } };
 
-static const neighbour_t N_B_SUB_PART[4][4][4] = {
+static const neighbour_t N_B_SUB_PART[4][4][4] H264BSD_HOT = {
     { { {MB_B,10}, {MB_NA,0}, {MB_NA,0}, {MB_NA,0} },
       { {MB_B,10}, {MB_CURR,0}, {MB_NA,0}, {MB_NA,0} },
       { {MB_B,10}, {MB_B,11}, {MB_NA,0}, {MB_NA,0} },
@@ -124,7 +124,7 @@ static const neighbour_t N_B_SUB_PART[4][4][4] = {
       { {MB_CURR,6}, {MB_CURR,7}, {MB_NA,0}, {MB_NA,0} },
       { {MB_CURR,6}, {MB_CURR,7}, {MB_CURR,12}, {MB_CURR,13} } } };
 
-static const neighbour_t N_C_SUB_PART[4][4][4] = {
+static const neighbour_t N_C_SUB_PART[4][4][4] H264BSD_HOT = {
     { { {MB_B,14}, {MB_NA,0}, {MB_NA,0}, {MB_NA,0} },
       { {MB_B,14}, {MB_NA,4}, {MB_NA,0}, {MB_NA,0} },
       { {MB_B,11}, {MB_B,14}, {MB_NA,0}, {MB_NA,0} },
@@ -145,7 +145,7 @@ static const neighbour_t N_C_SUB_PART[4][4][4] = {
       { {MB_CURR,7}, {MB_NA,2}, {MB_NA,0}, {MB_NA,0} },
       { {MB_CURR,7}, {MB_NA,2}, {MB_CURR,13}, {MB_NA,8} } } };
 
-static const neighbour_t N_D_SUB_PART[4][4][4] = {
+static const neighbour_t N_D_SUB_PART[4][4][4] H264BSD_HOT = {
     { { {MB_D,15}, {MB_NA,0}, {MB_NA,0}, {MB_NA,0} },
       { {MB_D,15}, {MB_A,5}, {MB_NA,0}, {MB_NA,0} },
       { {MB_D,15}, {MB_B,10}, {MB_NA,0}, {MB_NA,0} },

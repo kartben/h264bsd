@@ -73,7 +73,8 @@
  *  a-s are fractional samples that need to be interpolated.
  */
 #ifndef H264DEC_OMXDL
-static const u32 lumaFracPos[4][4] = {
+static const u32 lumaFracPos[4][4] H264BSD_HOT =
+    {
   /* G  d  h  n    a  e  i  p    b  f  j   q     c   g   k   r */
     {0, 1, 2, 3}, {4, 5, 6, 7}, {8, 9, 10, 11}, {12, 13, 14, 15}};
 #endif /* H264DEC_OMXDL */
