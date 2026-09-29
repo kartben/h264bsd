@@ -13,6 +13,9 @@ if(CONFIG_H264BSD)
   # the way the decoder does and read h264bsdPieOn
   zephyr_compile_definitions_ifdef(CONFIG_H264BSD_PIE H264BSD_PIE)
 
+  zephyr_library_compile_definitions_ifdef(CONFIG_H264BSD_STATIC_LAYER
+    H264BSD_STATIC_LAYER)
+
   if(NOT CONFIG_H264BSD_HOT_SECTION STREQUAL "")
     zephyr_library_compile_definitions(
       H264BSD_HOT_SECTION="${CONFIG_H264BSD_HOT_SECTION}")

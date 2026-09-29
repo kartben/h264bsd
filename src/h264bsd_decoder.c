@@ -106,9 +106,21 @@ u32 h264bsdInit(storage_t *pStorage, u32 noOutputReordering)
      * specific NEON optimized "memset" for clearing the structure */
     size = (sizeof(macroblockLayer_t) + 63) & ~0x3F;
 
+#ifdef H264BSD_STATIC_LAYER
+    /* The layer is parsed into and read back for every macroblock: a port
+     * whose heap is in slow memory keeps the one layer with its data
+     * instead, for one decoder at a time. */
+    {
+        static macroblockLayer_t layer __attribute__((aligned(16)));
+
+        pStorage->mbLayer = &layer;
+        (void)size;
+    }
+#else
     pStorage->mbLayer = (macroblockLayer_t*)malloc(size);
     if (!pStorage->mbLayer)
         return HANTRO_NOK;
+#endif
 
     if (noOutputReordering)
         pStorage->noReordering = HANTRO_TRUE;
@@ -570,7 +582,9 @@ void h264bsdShutdown(storage_t *pStorage)
         }
     }
 
+#ifndef H264BSD_STATIC_LAYER
     FREE(pStorage->mbLayer);
+#endif
     FREE(pStorage->mb);
     FREE(pStorage->sliceGroupMap);
 

@@ -43,6 +43,15 @@ config H264BSD_HOT_SECTION
 	  they are not fetched again and again through a cache that the
 	  pictures are streaming through. Empty leaves them with the code.
 
+config H264BSD_STATIC_LAYER
+	bool "Keep the macroblock layer in a static buffer"
+	default y if SOC_FAMILY_ESPRESSIF_ESP32 && ESP_SPIRAM
+	help
+	  The 2 KB macroblock layer is parsed into and read back for every
+	  macroblock. When the decoder's heap is in external RAM, keep the
+	  layer in a static buffer in internal RAM instead. Only one decoder
+	  instance at a time can then be initialised.
+
 config H264BSD_MALLOC
 	string "Name of the function the decoder allocates through"
 	default "malloc"
