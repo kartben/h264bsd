@@ -2,12 +2,16 @@
 # SPDX-License-Identifier: Apache-2.0
 
 menuconfig H264BSD
-	bool "h264bsd H.264 baseline profile decoder"
+	bool "h264bsd H.264 decoder"
 	depends on ZEPHYR_H264BSD_MODULE
 	help
-	  Decode H.264 baseline profile video in software. On an Armv8.1-M
-	  core with Helium the filters and interpolators are vectorised
-	  automatically; everywhere else the plain C is built.
+	  Decode H.264 video in software: the Baseline profile, and the High
+	  profile as hardware encoders use it for game streaming with CABAC
+	  turned off, that is 8-bit 4:2:0 progressive video coded with CAVLC,
+	  without B slices or weighted prediction.
+
+	  On an Armv8.1-M core with Helium the filters and interpolators are
+	  vectorised automatically; everywhere else the plain C is built.
 
 if H264BSD
 
