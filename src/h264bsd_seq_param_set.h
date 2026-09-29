@@ -45,6 +45,22 @@
     3. Data types
 ------------------------------------------------------------------------------*/
 
+/* Scaling lists of the High profiles in raster order: the 4x4 lists for
+ * Intra Y, Intra Cb, Intra Cr, Inter Y, Inter Cb and Inter Cr, then the 8x8
+ * lists for Intra Y and Inter Y. A flat list holds 16 everywhere. */
+typedef struct
+{
+    u8 list4x4[6][16];
+    u8 list8x8[2][64];
+} scalingLists_t;
+
+/* how a list of a picture parameter set was sent */
+enum {
+    SCALING_LIST_ABSENT = 0,
+    SCALING_LIST_EXPLICIT,
+    SCALING_LIST_DEFAULT
+};
+
 /* structure to store sequence parameter set information decoded from the
  * stream */
 typedef struct
@@ -72,6 +88,9 @@ typedef struct
     u32 vuiParametersPresentFlag;
     vuiParameters_t *vuiParameters;
     u32 maxDpbSize;
+    u32 scalingMatrixPresentFlag;
+    /* after fall-back rule A, only valid if scalingMatrixPresentFlag */
+    scalingLists_t scalingLists;
 } seqParamSet_t;
 
 /*------------------------------------------------------------------------------
@@ -82,6 +101,11 @@ u32 h264bsdDecodeSeqParamSet(strmData_t *pStrmData,
     seqParamSet_t *pSeqParamSet);
 
 u32 h264bsdCompareSeqParamSets(seqParamSet_t *pSps1, seqParamSet_t *pSps2);
+
+u32 h264bsdDecodeScalingLists(strmData_t *pStrmData, scalingLists_t *pLists,
+    u8 *present, u32 numLists);
+void h264bsdScalingListFallBack(scalingLists_t *pLists, const u8 *present,
+    const scalingLists_t *pSeqLists);
 
 #endif /* #ifdef H264SWDEC_SEQ_PARAM_SET_H */
 

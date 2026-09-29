@@ -327,6 +327,57 @@ u32 h264bsdDecodePicParamSet(strmData_t *pStrmData, picParamSet_t *pPicParamSet)
     pPicParamSet->redundantPicCntPresentFlag = (tmp == 1) ?
                                     HANTRO_TRUE : HANTRO_FALSE;
 
+    /* the rest is only present in the High profiles */
+    pPicParamSet->chromaQpIndexOffset2 = pPicParamSet->chromaQpIndexOffset;
+    if (h264bsdMoreRbspData(pStrmData))
+    {
+        tmp = h264bsdGetBits(pStrmData, 1);
+        if (tmp == END_OF_STREAM)
+            return(HANTRO_NOK);
+        pPicParamSet->transform8x8Flag = tmp;
+        if (tmp)
+        {
+            /* not decoded yet */
+            EPRINT("transform_8x8_mode_flag");
+            return(HANTRO_NOK);
+        }
+
+        tmp = h264bsdGetBits(pStrmData, 1);
+        if (tmp == END_OF_STREAM)
+            return(HANTRO_NOK);
+        pPicParamSet->scalingMatrixPresentFlag = tmp;
+        if (tmp)
+        {
+            /* 6 + 2 lists, chroma formats other than 4:2:0 are rejected in
+             * the sequence parameter set */
+            tmp = h264bsdDecodeScalingLists(pStrmData,
+                &pPicParamSet->scalingLists, pPicParamSet->scalingListPresent,
+                6 + 2 * pPicParamSet->transform8x8Flag);
+            if (tmp != HANTRO_OK)
+                return(tmp);
+
+            /* not applied yet */
+            EPRINT("pic_scaling_matrix_present_flag");
+            return(HANTRO_NOK);
+        }
+
+        tmp = h264bsdDecodeExpGolombSigned(pStrmData, &itmp);
+        if (tmp != HANTRO_OK)
+            return(tmp);
+        if ((itmp < -12) || (itmp > 12))
+        {
+            EPRINT("second_chroma_qp_index_offset");
+            return(HANTRO_NOK);
+        }
+        pPicParamSet->chromaQpIndexOffset2 = itmp;
+        if (itmp != pPicParamSet->chromaQpIndexOffset)
+        {
+            /* not decoded yet */
+            EPRINT("second_chroma_qp_index_offset");
+            return(HANTRO_NOK);
+        }
+    }
+
     tmp = h264bsdRbspTrailingBits(pStrmData);
 
     /* ignore possible errors in trailing bits of parameters sets */

@@ -35,6 +35,7 @@
 
 #include "basetype.h"
 #include "h264bsd_stream.h"
+#include "h264bsd_seq_param_set.h"
 
 /*------------------------------------------------------------------------------
     2. Module defines
@@ -65,6 +66,14 @@ typedef struct
     u32 deblockingFilterControlPresentFlag;
     u32 constrainedIntraPredFlag;
     u32 redundantPicCntPresentFlag;
+    /* second_chroma_qp_index_offset, used for Cr */
+    i32 chromaQpIndexOffset2;
+    u32 transform8x8Flag;
+    u32 scalingMatrixPresentFlag;
+    /* SCALING_LIST_* of each list and the explicit ones, the fall-back
+     * rule depends on the sequence parameter set */
+    u8 scalingListPresent[8];
+    scalingLists_t scalingLists;
 } picParamSet_t;
 
 /*------------------------------------------------------------------------------

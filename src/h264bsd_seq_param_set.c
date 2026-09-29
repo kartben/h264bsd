@@ -27,6 +27,8 @@
           h264bsdDecodeSeqParamSet
           GetDpbSize
           h264bsdCompareSeqParamSets
+          h264bsdDecodeScalingLists
+          h264bsdScalingListFallBack
 
 ------------------------------------------------------------------------------*/
 
@@ -39,6 +41,7 @@
 #include "h264bsd_vlc.h"
 #include "h264bsd_vui.h"
 #include "h264bsd_cfg.h"
+#include "h264bsd_transform.h"
 
 /*------------------------------------------------------------------------------
     2. External compiler flags
@@ -51,11 +54,28 @@
 /* enumeration to indicate invalid return value from the GetDpbSize function */
 enum {INVALID_DPB_SIZE = 0x7FFFFFFF};
 
+/* Default scaling lists (Tables 7-3 and 7-4) in zig-zag scan order, intra
+ * list first */
+static const u8 defaultList4x4[2][16] = {
+    { 6,13,13,20,20,20,28,28,28,28,32,32,32,37,37,42},
+    {10,14,14,20,20,20,24,24,24,24,27,27,27,30,30,34} };
+
+static const u8 defaultList8x8[2][64] = {
+    { 6,10,10,13,11,13,16,16,16,16,18,18,18,18,18,23,
+     23,23,23,23,23,25,25,25,25,25,25,25,27,27,27,27,
+     27,27,27,27,29,29,29,29,29,29,29,31,31,31,31,31,
+     31,33,33,33,33,33,36,36,36,36,38,38,38,40,40,42},
+    { 9,13,13,15,13,15,17,17,17,17,19,19,19,19,19,21,
+     21,21,21,21,21,22,22,22,22,22,22,22,24,24,24,24,
+     24,24,24,24,25,25,25,25,25,25,25,27,27,27,27,27,
+     27,28,28,28,28,28,30,30,30,30,32,32,32,33,33,35} };
+
 /*------------------------------------------------------------------------------
     4. Local function prototypes
 ------------------------------------------------------------------------------*/
 
 static u32 GetDpbSize(u32 picSizeInMbs, u32 levelIdc);
+static u32 IsHighProfile(u32 profileIdc);
 
 /*------------------------------------------------------------------------------
 
@@ -133,6 +153,64 @@ u32 h264bsdDecodeSeqParamSet(strmData_t *pStrmData, seqParamSet_t *pSeqParamSet)
     {
         EPRINT("seq_param_set_id");
         return(HANTRO_NOK);
+    }
+
+    if (IsHighProfile(pSeqParamSet->profileIdc))
+    {
+        /* chroma_format_idc, only 4:2:0 is decoded, which is also the only
+         * format of the profiles without this field */
+        tmp = h264bsdDecodeExpGolombUnsigned(pStrmData, &value);
+        if (tmp != HANTRO_OK)
+            return(tmp);
+        if (value != 1)
+        {
+            EPRINT("chroma_format_idc");
+            return(HANTRO_NOK);
+        }
+
+        /* bit_depth_luma_minus8 and bit_depth_chroma_minus8, only 8 bits
+         * are decoded */
+        for (i = 0; i < 2; i++)
+        {
+            tmp = h264bsdDecodeExpGolombUnsigned(pStrmData, &value);
+            if (tmp != HANTRO_OK)
+                return(tmp);
+            if (value != 0)
+            {
+                EPRINT("bit_depth_minus8");
+                return(HANTRO_NOK);
+            }
+        }
+
+        /* qpprime_y_zero_transform_bypass_flag, lossless coding is not
+         * supported */
+        tmp = h264bsdGetBits(pStrmData, 1);
+        if (tmp)
+        {
+            EPRINT("qpprime_y_zero_transform_bypass_flag");
+            return(HANTRO_NOK);
+        }
+
+        tmp = h264bsdGetBits(pStrmData, 1);
+        if (tmp == END_OF_STREAM)
+            return(HANTRO_NOK);
+        pSeqParamSet->scalingMatrixPresentFlag = tmp;
+        if (tmp)
+        {
+            u8 present[8];
+
+            tmp = h264bsdDecodeScalingLists(pStrmData,
+                &pSeqParamSet->scalingLists, present, 8);
+            if (tmp != HANTRO_OK)
+                return(tmp);
+            /* fall-back rule A */
+            h264bsdScalingListFallBack(&pSeqParamSet->scalingLists, present,
+                NULL);
+
+            /* not applied yet */
+            EPRINT("seq_scaling_matrix_present_flag");
+            return(HANTRO_NOK);
+        }
     }
 
     /* log2_max_frame_num_minus4 */
@@ -530,8 +608,13 @@ u32 h264bsdCompareSeqParamSets(seqParamSet_t *pSps1, seqParamSet_t *pSps2)
         pSps1->picWidthInMbs     == pSps2->picWidthInMbs &&
         pSps1->picHeightInMbs    == pSps2->picHeightInMbs &&
         pSps1->frameCroppingFlag == pSps2->frameCroppingFlag &&
-        pSps1->vuiParametersPresentFlag == pSps2->vuiParametersPresentFlag)
+        pSps1->vuiParametersPresentFlag == pSps2->vuiParametersPresentFlag &&
+        pSps1->scalingMatrixPresentFlag == pSps2->scalingMatrixPresentFlag)
     {
+        if (pSps1->scalingMatrixPresentFlag &&
+            memcmp(&pSps1->scalingLists, &pSps2->scalingLists,
+                sizeof(scalingLists_t)))
+            return 1;
         if (pSps1->picOrderCntType == 0)
         {
             if (pSps1->maxPicOrderCntLsb != pSps2->maxPicOrderCntLsb)
@@ -576,3 +659,175 @@ u32 h264bsdCompareSeqParamSets(seqParamSet_t *pSps1, seqParamSet_t *pSps2)
     return 1;
 }
 
+/*------------------------------------------------------------------------------
+
+    Function: IsHighProfile
+
+        Functional description:
+            Tell whether a profile carries the chroma format, bit depth and
+            scaling matrix fields in its sequence parameter set.
+
+------------------------------------------------------------------------------*/
+
+u32 IsHighProfile(u32 profileIdc)
+{
+    switch (profileIdc)
+    {
+        case 100: case 110: case 122: case 244: case 44: case 83: case 86:
+        case 118: case 128: case 138: case 139: case 134: case 135:
+            return(HANTRO_TRUE);
+        default:
+            return(HANTRO_FALSE);
+    }
+}
+
+/*------------------------------------------------------------------------------
+
+    Function: h264bsdDecodeScalingLists
+
+        Functional description:
+            Decode the scaling_list_present_flag and scaling_list() syntax of
+            a sequence or picture parameter set. Explicit lists are stored in
+            raster order, 'present' tells for each list whether it was sent,
+            sent as a request for the default list, or left out.
+
+        Inputs:
+            pStrmData       pointer to stream data structure
+            numLists        number of lists in the syntax, 6 or 8
+
+        Outputs:
+            pLists          explicit lists stored here
+            present         SCALING_LIST_* for each list
+
+        Returns:
+            HANTRO_OK       success
+            HANTRO_NOK      invalid data or end of stream
+
+------------------------------------------------------------------------------*/
+
+u32 h264bsdDecodeScalingLists(strmData_t *pStrmData, scalingLists_t *pLists,
+    u8 *present, u32 numLists)
+{
+
+/* Variables */
+
+    u32 i, j, tmp, size;
+    i32 delta;
+    u32 lastScale, nextScale;
+    u8 *list;
+    const u8 *scan;
+
+/* Code */
+
+    ASSERT(numLists <= 8);
+
+    for (i = 0; i < 8; i++)
+        present[i] = SCALING_LIST_ABSENT;
+
+    for (i = 0; i < numLists; i++)
+    {
+        tmp = h264bsdGetBits(pStrmData, 1);
+        if (tmp == END_OF_STREAM)
+            return(HANTRO_NOK);
+        if (!tmp)
+            continue;
+
+        if (i < 6)
+        {
+            size = 16;
+            list = pLists->list4x4[i];
+            scan = h264bsdZigZag4x4;
+        }
+        else
+        {
+            size = 64;
+            list = pLists->list8x8[i-6];
+            scan = h264bsdZigZag8x8;
+        }
+
+        present[i] = SCALING_LIST_EXPLICIT;
+        lastScale = nextScale = 8;
+        for (j = 0; j < size; j++)
+        {
+            if (nextScale)
+            {
+                tmp = h264bsdDecodeExpGolombSigned(pStrmData, &delta);
+                if (tmp != HANTRO_OK)
+                    return(tmp);
+                if (delta < -128 || delta > 127)
+                {
+                    EPRINT("delta_scale");
+                    return(HANTRO_NOK);
+                }
+                nextScale = (lastScale + (u32)delta + 256) & 0xFF;
+                /* useDefaultScalingMatrixFlag */
+                if (!j && !nextScale)
+                {
+                    present[i] = SCALING_LIST_DEFAULT;
+                    break;
+                }
+            }
+            if (nextScale)
+                lastScale = nextScale;
+            list[scan[j]] = (u8)lastScale;
+        }
+    }
+
+    return(HANTRO_OK);
+
+}
+
+/*------------------------------------------------------------------------------
+
+    Function: h264bsdScalingListFallBack
+
+        Functional description:
+            Complete a set of scaling lists by filling in the lists that were
+            not sent explicitly: defaults where asked for, otherwise fall-back
+            rule A (pSeqLists NULL) or B (the sequence-level lists) of Table
+            7-2.
+
+        Inputs:
+            present         SCALING_LIST_* for each of the 8 lists
+            pSeqLists       sequence-level lists for rule B, NULL for rule A
+
+        Outputs:
+            pLists          lists completed in place
+
+------------------------------------------------------------------------------*/
+
+void h264bsdScalingListFallBack(scalingLists_t *pLists, const u8 *present,
+    const scalingLists_t *pSeqLists)
+{
+
+/* Variables */
+
+    u32 i, j;
+
+/* Code */
+
+    for (i = 0; i < 6; i++)
+    {
+        if (present[i] == SCALING_LIST_EXPLICIT)
+            continue;
+        if (present[i] == SCALING_LIST_ABSENT && i != 0 && i != 3)
+            memcpy(pLists->list4x4[i], pLists->list4x4[i-1], 16);
+        else if (present[i] == SCALING_LIST_ABSENT && pSeqLists)
+            memcpy(pLists->list4x4[i], pSeqLists->list4x4[i], 16);
+        else
+            for (j = 0; j < 16; j++)
+                pLists->list4x4[i][h264bsdZigZag4x4[j]] =
+                    defaultList4x4[i / 3][j];
+    }
+    for (i = 0; i < 2; i++)
+    {
+        if (present[6+i] == SCALING_LIST_EXPLICIT)
+            continue;
+        if (present[6+i] == SCALING_LIST_ABSENT && pSeqLists)
+            memcpy(pLists->list8x8[i], pSeqLists->list8x8[i], 64);
+        else
+            for (j = 0; j < 64; j++)
+                pLists->list8x8[i][h264bsdZigZag8x8[j]] = defaultList8x8[i][j];
+    }
+
+}
