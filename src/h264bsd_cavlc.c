@@ -318,48 +318,56 @@ static const u8 runBefore_2[4] = {0x22,0x12,0x01,0x01};
 
 static const u8 runBefore_1[2] = {0x11,0x01};
 
-/* following four macros are used to handle stream buffer "cache" in the CAVLC
- * decoding function */
+/* The stream is read through a 32-bit window, value, that holds the next
+ * bits bits of it in its most significant bits and is refilled a byte at a
+ * time from p, with zeros past the end of the buffer; the position is only
+ * written back to the stream structure when the block is done, and an overrun
+ * shows there. */
 
-/* macro to initialize stream buffer cache, fills the buffer (32 bits) */
-#define BUFFER_INIT(value, bits) \
+/* fills the window from the current position of the stream */
+#define BUFFER_INIT() \
 { \
-    bits = 32; \
-    value = h264bsdShowBits32(pStrmData); \
+    p = pStrmData->pStrmCurrPos; \
+    end = pStrmData->pStrmBuffStart + pStrmData->strmBuffSize; \
+    value = 0; \
+    bits = 0; \
+    BUFFER_FILL(); \
+    tmp = pStrmData->bitPosInWord; \
+    value <<= tmp; \
+    bits -= tmp; \
 }
 
-/* macro to read numBits bits from the buffer, bits will be written to
- * outVal. Refills the buffer if not enough bits left */
-#define BUFFER_SHOW(value, bits, outVal, numBits) \
+/* tops the window up to at least 25 bits */
+#define BUFFER_FILL() \
+{ \
+    while (bits <= 24) \
+    { \
+        value |= (u32)(p < end ? *p : 0) << (24 - bits); \
+        p++; \
+        bits += 8; \
+    } \
+}
+
+/* macro to read numBits bits (at most 16) from the window into outVal */
+#define BUFFER_SHOW(outVal, numBits) \
 { \
     if (bits < (numBits)) \
-    { \
-        if(h264bsdFlushBits(pStrmData,32-bits) == END_OF_STREAM) \
-            return(HANTRO_NOK); \
-        value = h264bsdShowBits32(pStrmData); \
-        bits = 32; \
-    } \
+        BUFFER_FILL(); \
     (outVal) = value >> (32 - (numBits)); \
 }
 
-/* macro to flush numBits bits from the buffer */
-#define BUFFER_FLUSH(value, bits, numBits) \
+/* macro to flush numBits bits from the window */
+#define BUFFER_FLUSH(numBits) \
 { \
     value <<= (numBits); \
     bits -= (numBits); \
 }
 
-/* macro to read and flush  numBits bits from the buffer, bits will be written
- * to outVal. Refills the buffer if not enough bits left */
-#define BUFFER_GET(value, bits, outVal, numBits) \
+/* macro to read and flush numBits bits (1 to 16) from the window */
+#define BUFFER_GET(outVal, numBits) \
 { \
     if (bits < (numBits)) \
-    { \
-        if(h264bsdFlushBits(pStrmData,32-bits) == END_OF_STREAM) \
-            return(HANTRO_NOK); \
-        value = h264bsdShowBits32(pStrmData); \
-        bits = 32; \
-    } \
+        BUFFER_FILL(); \
     (outVal) = value >> (32 - (numBits)); \
     value <<= (numBits); \
     bits -= (numBits); \
@@ -760,8 +768,9 @@ u32 h264bsdDecodeResidualBlockCavlc(
     i32 level[16];
     u32 run[16];
     /* stream "cache" */
-    u32 bufferValue;
-    u32 bufferBits;
+    u32 value;
+    u32 bits;
+    const u8 *p, *end;
 
 /* Code */
 
@@ -773,15 +782,13 @@ u32 h264bsdDecodeResidualBlockCavlc(
 
     /* assume that coeffLevel array has been "cleaned" by caller */
 
-    BUFFER_INIT(bufferValue, bufferBits);
+    BUFFER_INIT();
 
-    /*lint -e774 disable lint warning on always false comparison */
-    BUFFER_SHOW(bufferValue, bufferBits, bit, 16);
-    /*lint +e774 */
+    BUFFER_SHOW(bit, 16);
     tmp = DecodeCoeffToken(bit, (u32)nc);
     if (!tmp)
         return(HANTRO_NOK);
-    BUFFER_FLUSH(bufferValue, bufferBits, LENGTH_TC(tmp));
+    BUFFER_FLUSH(LENGTH_TC(tmp));
 
     totalCoeff = TOTAL_COEFF(tmp);
     if (totalCoeff > maxNumCoeff)
@@ -794,7 +801,7 @@ u32 h264bsdDecodeResidualBlockCavlc(
         /* nonzero coefficients: +/- 1 */
         if (trailingOnes)
         {
-            BUFFER_GET(bufferValue, bufferBits, bit, trailingOnes);
+            BUFFER_GET(bit, trailingOnes);
             tmp = 1 << (trailingOnes - 1);
             for (; tmp; i++)
             {
@@ -811,20 +818,20 @@ u32 h264bsdDecodeResidualBlockCavlc(
 
         for (; i < totalCoeff; i++)
         {
-            BUFFER_SHOW(bufferValue, bufferBits, bit, 16);
-            levelPrefix = DecodeLevelPrefix(bit);
-            if (levelPrefix == VLC_NOT_FOUND)
+            if (bits < 16)
+                BUFFER_FILL();
+            if (value < 0x10000)
             {
                 /* level_prefix above 15, only allowed in the High
                  * profiles: count the zeros of the next 16 bits too */
-                BUFFER_FLUSH(bufferValue, bufferBits, 16);
-                BUFFER_SHOW(bufferValue, bufferBits, bit, 16);
+                BUFFER_FLUSH(16);
+                BUFFER_SHOW(bit, 16);
                 levelPrefix = DecodeLevelPrefix(bit);
                 /* from level_prefix 20 on every level is out of the 16-bit
                  * range of 8-bit video */
                 if (levelPrefix == VLC_NOT_FOUND || levelPrefix > 3)
                     return(HANTRO_NOK);
-                BUFFER_FLUSH(bufferValue, bufferBits, levelPrefix+1);
+                BUFFER_FLUSH(levelPrefix+1);
                 levelPrefix += 16;
 
                 /* levelCode = (15 << suffixLength) + level_suffix, + 15 if
@@ -832,13 +839,19 @@ u32 h264bsdDecodeResidualBlockCavlc(
                 if (!suffixLength)
                     suffixLength = 1;
                 tmp = levelPrefix - 3;
-                BUFFER_GET(bufferValue, bufferBits, levelSuffix, tmp);
+                BUFFER_GET(levelSuffix, tmp);
                 levelPrefix = (15 << suffixLength) + levelSuffix +
                     (1 << tmp) - 4096;
             }
             else
             {
-                BUFFER_FLUSH(bufferValue, bufferBits, levelPrefix+1);
+                /* the leading zeros of the window, at most 15 here */
+#if defined(__GNUC__)
+                levelPrefix = (u32)__builtin_clz(value);
+#else
+                levelPrefix = DecodeLevelPrefix(value >> 16);
+#endif
+                BUFFER_FLUSH(levelPrefix+1);
 
                 if (levelPrefix < 14)
                     tmp = suffixLength;
@@ -861,7 +874,7 @@ u32 h264bsdDecodeResidualBlockCavlc(
 
                 if (tmp)
                 {
-                    BUFFER_GET(bufferValue, bufferBits, levelSuffix, tmp);
+                    BUFFER_GET(levelSuffix, tmp);
                     levelPrefix += levelSuffix;
                 }
             }
@@ -886,12 +899,12 @@ u32 h264bsdDecodeResidualBlockCavlc(
         /* zero runs */
         if (totalCoeff < maxNumCoeff)
         {
-            BUFFER_SHOW(bufferValue, bufferBits, bit,9);
+            BUFFER_SHOW(bit, 9);
             zerosLeft = DecodeTotalZeros(bit, totalCoeff,
                                         (u32)(maxNumCoeff == 4));
             if (!zerosLeft)
                 return(HANTRO_NOK);
-            BUFFER_FLUSH(bufferValue, bufferBits, LENGTH(zerosLeft));
+            BUFFER_FLUSH(LENGTH(zerosLeft));
             zerosLeft = INFO(zerosLeft);
         }
         else
@@ -901,11 +914,11 @@ u32 h264bsdDecodeResidualBlockCavlc(
         {
             if (zerosLeft > 0)
             {
-                BUFFER_SHOW(bufferValue, bufferBits, bit,11);
+                BUFFER_SHOW(bit, 11);
                 tmp = DecodeRunBefore(bit, zerosLeft);
                 if (!tmp)
                     return(HANTRO_NOK);
-                BUFFER_FLUSH(bufferValue, bufferBits, LENGTH(tmp));
+                BUFFER_FLUSH(LENGTH(tmp));
                 run[i] = INFO(tmp);
                 zerosLeft -= run[i]++;
             }
@@ -933,8 +946,13 @@ u32 h264bsdDecodeResidualBlockCavlc(
     else
         levelSuffix = 0;
 
-    if (h264bsdFlushBits(pStrmData, 32-bufferBits) != HANTRO_OK)
+    /* the position the block ends at, an error if past the buffer */
+    tmp = (u32)(p - pStrmData->pStrmBuffStart) * 8 - bits;
+    if (tmp > 8 * pStrmData->strmBuffSize)
         return(HANTRO_NOK);
+    pStrmData->strmBuffReadBits = tmp;
+    pStrmData->bitPosInWord = tmp & 0x7;
+    pStrmData->pStrmCurrPos = pStrmData->pStrmBuffStart + (tmp >> 3);
 
     return((totalCoeff << 4) | (levelSuffix << 16));
 }
