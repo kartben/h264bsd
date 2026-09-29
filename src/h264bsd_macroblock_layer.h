@@ -37,6 +37,7 @@
 #include "h264bsd_stream.h"
 #include "h264bsd_image.h"
 #include "h264bsd_dpb.h"
+#include "h264bsd_seq_param_set.h"
 
 /*------------------------------------------------------------------------------
     2. Module defines
@@ -204,7 +205,7 @@ subMbPartMode_e h264bsdSubMbPartMode(subMbType_e subMbType);
 
 u32 h264bsdDecodeMacroblock(mbStorage_t *pMb, macroblockLayer_t *pMbLayer,
     image_t *currImage, dpbStorage_t *dpb, i32 *qpY, u32 mbNum,
-    u32 constrainedIntraPredFlag, u8* data);
+    u32 constrainedIntraPredFlag, u8* data, const scalingLists_t *scaling);
 
 u32 h264bsdPredModeIntra16x16(mbType_e mbType);
 

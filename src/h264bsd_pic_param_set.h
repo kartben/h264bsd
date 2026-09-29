@@ -83,5 +83,8 @@ typedef struct
 u32 h264bsdDecodePicParamSet(strmData_t *pStrmData,
     picParamSet_t *pPicParamSet);
 
+u32 h264bsdGetScalingLists(const seqParamSet_t *pSps,
+    const picParamSet_t *pPps, scalingLists_t *pLists);
+
 #endif /* #ifdef H264SWDEC_PIC_PARAM_SET_H */
 

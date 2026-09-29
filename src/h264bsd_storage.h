@@ -143,6 +143,9 @@ typedef struct storage
      * allocated from head -> easiest to put it here */
     macroblockLayer_t *mbLayer;
 
+    /* scaling lists of the slice being decoded, if not flat */
+    scalingLists_t scalingLists;
+
     u32 pendingActivation; /* Activate parameter sets after returning
                               HEADERS_RDY to the user */
     u32 intraConcealmentFlag; /* 0 gray picture for corrupted intra

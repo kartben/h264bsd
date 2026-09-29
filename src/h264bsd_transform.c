@@ -30,6 +30,9 @@
           h264bsdProcessLumaDc
           h264bsdProcessChromaDc
           h264bsdProcessBlock8x8
+          h264bsdProcessBlockScaled
+          h264bsdProcessLumaDcScaled
+          h264bsdProcessChromaDcScaled
 
 ------------------------------------------------------------------------------*/
 
@@ -83,6 +86,9 @@ const u8 h264bsdFlatList8x8[64] = {
     16,16,16,16,16,16,16,16, 16,16,16,16,16,16,16,16,
     16,16,16,16,16,16,16,16, 16,16,16,16,16,16,16,16};
 
+/* column of levelScale used for each raster position of a 4x4 block */
+static const u8 posClass4x4[16] = {0,1,0,1, 1,2,1,2, 0,1,0,1, 1,2,1,2};
+
 /* normAdjust8x8 values of Table 8-16 (v) and the one of the six used for each
  * raster position of an 8x8 block */
 static const u8 normAdjust8x8[6][6] = {
@@ -96,6 +102,8 @@ static const u8 posClass8x8[64] = {
 /*------------------------------------------------------------------------------
     4. Local function prototypes
 ------------------------------------------------------------------------------*/
+
+static u32 InverseTransform4x4(i32 *data, const i32 *coeffs);
 
 /*------------------------------------------------------------------------------
 
@@ -585,6 +593,232 @@ u32 h264bsdProcessBlock8x8(i32 (*data)[16], u32 qp, const u8 *weights)
     }
 
     return(HANTRO_OK);
+
+}
+
+/*------------------------------------------------------------------------------
+
+    Function: InverseTransform4x4
+
+        Functional description:
+            Inverse transform of a 4x4 block of scaled coefficients in raster
+            order (8.5.12.2), result written to data.
+
+        Returns:
+            HANTRO_OK       success
+            HANTRO_NOK      residual not in valid range [-512, 511]
+
+------------------------------------------------------------------------------*/
+
+static u32 InverseTransform4x4(i32 *data, const i32 *coeffs)
+{
+
+/* Variables */
+
+    i32 tmp0, tmp1, tmp2, tmp3;
+    i32 t[16];
+    u32 row, col;
+    const i32 *ptr;
+    i32 *out;
+
+/* Code */
+
+    for (row = 4, ptr = coeffs, out = t; row--; ptr += 4, out += 4)
+    {
+        tmp0 = ptr[0] + ptr[2];
+        tmp1 = ptr[0] - ptr[2];
+        tmp2 = (ptr[1] >> 1) - ptr[3];
+        tmp3 = ptr[1] + (ptr[3] >> 1);
+        out[0] = tmp0 + tmp3;
+        out[1] = tmp1 + tmp2;
+        out[2] = tmp1 - tmp2;
+        out[3] = tmp0 - tmp3;
+    }
+    for (col = 4, ptr = t; col--; ptr++, data++)
+    {
+        tmp0 = ptr[0] + ptr[8];
+        tmp1 = ptr[0] - ptr[8];
+        tmp2 = (ptr[4] >> 1) - ptr[12];
+        tmp3 = ptr[4] + (ptr[12] >> 1);
+        data[0 ] = (tmp0 + tmp3 + 32)>>6;
+        data[4 ] = (tmp1 + tmp2 + 32)>>6;
+        data[8 ] = (tmp1 - tmp2 + 32)>>6;
+        data[12] = (tmp0 - tmp3 + 32)>>6;
+        if (((u32)(data[0] + 512) > 1023) ||
+            ((u32)(data[4] + 512) > 1023) ||
+            ((u32)(data[8] + 512) > 1023) ||
+            ((u32)(data[12] + 512) > 1023) )
+            return(HANTRO_NOK);
+    }
+
+    return(HANTRO_OK);
+
+}
+
+/*------------------------------------------------------------------------------
+
+    Function: h264bsdProcessBlockScaled
+
+        Functional description:
+            h264bsdProcessBlock for a non-flat scaling matrix: inverse
+            zig-zag scan, inverse scaling with weightScale4x4 (8.5.12.1) and
+            inverse transform of a 4x4 block.
+
+        Inputs:
+            data            levels in scan order
+            qp              quantization parameter
+            skip            data[0] is a dc coefficient already scaled
+            weights         weightScale4x4 in raster order
+
+        Outputs:
+            data            residual in raster order
+
+        Returns:
+            HANTRO_OK       success
+            HANTRO_NOK      residual not in valid range [-512, 511]
+
+------------------------------------------------------------------------------*/
+
+u32 h264bsdProcessBlockScaled(i32 *data, u32 qp, u32 skip, const u8 *weights)
+{
+
+/* Variables */
+
+    i32 d[16];
+    u32 k, pos, qpDiv;
+    i32 c, round;
+    const i32 *ls;
+
+/* Code */
+
+    qpDiv = qpDiv6[qp];
+    ls = levelScale[qpMod6[qp]];
+    round = qpDiv < 4 ? 1 << (3 - qpDiv) : 0;
+
+    d[0] = data[0];
+    for (k = skip; k < 16; k++)
+    {
+        pos = h264bsdZigZag4x4[k];
+        c = data[k] * (i32)weights[pos] * ls[posClass4x4[pos]];
+        if (qpDiv >= 4)
+            d[pos] = c * (1 << (qpDiv - 4));
+        else
+            d[pos] = (c + round) >> (4 - qpDiv);
+    }
+
+    return(InverseTransform4x4(data, d));
+
+}
+
+/*------------------------------------------------------------------------------
+
+    Function: h264bsdProcessLumaDcScaled
+
+        Functional description:
+            h264bsdProcessLumaDc for a non-flat scaling matrix.
+
+        Inputs:
+            data            Intra16x16 dc levels in scan order
+            qp              quantization parameter
+            weight          weightScale4x4(0,0) of the Intra Y list
+
+        Outputs:
+            data            dc coefficients in raster order
+
+------------------------------------------------------------------------------*/
+
+void h264bsdProcessLumaDcScaled(i32 *data, u32 qp, u32 weight)
+{
+
+/* Variables */
+
+    i32 c[16];
+    i32 tmp0, tmp1, tmp2, tmp3;
+    u32 k, qpDiv;
+    i32 ls, round;
+    i32 *ptr;
+
+/* Code */
+
+    for (k = 0; k < 16; k++)
+        c[h264bsdZigZag4x4[k]] = data[k];
+
+    for (k = 4, ptr = c; k--; ptr += 4)
+    {
+        tmp0 = ptr[0] + ptr[2];
+        tmp1 = ptr[0] - ptr[2];
+        tmp2 = ptr[1] - ptr[3];
+        tmp3 = ptr[1] + ptr[3];
+        ptr[0] = tmp0 + tmp3;
+        ptr[1] = tmp1 + tmp2;
+        ptr[2] = tmp1 - tmp2;
+        ptr[3] = tmp0 - tmp3;
+    }
+    for (k = 4, ptr = c; k--; ptr++)
+    {
+        tmp0 = ptr[0] + ptr[8];
+        tmp1 = ptr[0] - ptr[8];
+        tmp2 = ptr[4] - ptr[12];
+        tmp3 = ptr[4] + ptr[12];
+        ptr[0] = tmp0 + tmp3;
+        ptr[4] = tmp1 + tmp2;
+        ptr[8] = tmp1 - tmp2;
+        ptr[12] = tmp0 - tmp3;
+    }
+
+    qpDiv = qpDiv6[qp];
+    ls = (i32)weight * levelScale[qpMod6[qp]][0];
+    round = qpDiv < 6 ? 1 << (5 - qpDiv) : 0;
+    for (k = 0; k < 16; k++)
+    {
+        if (qpDiv >= 6)
+            data[k] = c[k] * ls * (1 << (qpDiv - 6));
+        else
+            data[k] = (c[k] * ls + round) >> (6 - qpDiv);
+    }
+
+}
+
+/*------------------------------------------------------------------------------
+
+    Function: h264bsdProcessChromaDcScaled
+
+        Functional description:
+            h264bsdProcessChromaDc for a non-flat scaling matrix, for the four
+            dc coefficients of one chroma component.
+
+        Inputs:
+            data            dc levels
+            qp              chroma quantization parameter
+            weight          weightScale4x4(0,0) of the chroma list
+
+        Outputs:
+            data            dc coefficients
+
+------------------------------------------------------------------------------*/
+
+void h264bsdProcessChromaDcScaled(i32 *data, u32 qp, u32 weight)
+{
+
+/* Variables */
+
+    i32 tmp0, tmp1, tmp2, tmp3;
+    i32 ls;
+    u32 qpDiv;
+
+/* Code */
+
+    qpDiv = qpDiv6[qp];
+    ls = (i32)weight * levelScale[qpMod6[qp]][0];
+
+    tmp0 = data[0] + data[2];
+    tmp1 = data[0] - data[2];
+    tmp2 = data[1] - data[3];
+    tmp3 = data[1] + data[3];
+    data[0] = ((tmp0 + tmp3) * ls * (1 << qpDiv)) >> 5;
+    data[1] = ((tmp0 - tmp3) * ls * (1 << qpDiv)) >> 5;
+    data[2] = ((tmp1 + tmp2) * ls * (1 << qpDiv)) >> 5;
+    data[3] = ((tmp1 - tmp2) * ls * (1 << qpDiv)) >> 5;
 
 }
 

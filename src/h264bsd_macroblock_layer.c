@@ -36,6 +36,7 @@
           h264bsdPredModeIntra16x16
           h264bsdDecodeMacroblock
           ProcessResidual
+          ProcessResidualScaled
           h264bsdSubMbPartMode
 
 ------------------------------------------------------------------------------*/
@@ -106,7 +107,10 @@ static u32 ProcessIntra16x16Residual(mbStorage_t *pMb, u8 *data, u32 constrained
 
 
 #else
-static u32 ProcessResidual(mbStorage_t *pMb, i32 residualLevel[][16], u32 *);
+static u32 ProcessResidual(mbStorage_t *pMb, i32 residualLevel[][16], u32 *,
+    const scalingLists_t *scaling);
+static u32 ProcessResidualScaled(mbStorage_t *pMb, i32 residualLevel[][16],
+    const scalingLists_t *scaling);
 #endif
 
 /*------------------------------------------------------------------------------
@@ -1002,6 +1006,7 @@ u32 h264bsdPredModeIntra16x16(mbType_e mbType)
           mbNum         current macroblock number
           constrainedIntraPred  flag specifying if neighbouring inter
                                 macroblocks are used in intra prediction
+          scaling       scaling lists, NULL if flat
 
         Outputs:
           pMb           structure is updated with current macroblock
@@ -1015,7 +1020,7 @@ u32 h264bsdPredModeIntra16x16(mbType_e mbType)
 
 u32 h264bsdDecodeMacroblock(mbStorage_t *pMb, macroblockLayer_t *pMbLayer,
     image_t *currImage, dpbStorage_t *dpb, i32 *qpY, u32 mbNum,
-    u32 constrainedIntraPredFlag, u8* data)
+    u32 constrainedIntraPredFlag, u8* data, const scalingLists_t *scaling)
 {
 
 /* Variables */
@@ -1148,7 +1153,7 @@ u32 h264bsdDecodeMacroblock(mbStorage_t *pMb, macroblockLayer_t *pMbLayer,
 
 #else
             tmp = ProcessResidual(pMb, pMbLayer->residual.level,
-                pMbLayer->residual.coeffMap);
+                pMbLayer->residual.coeffMap, scaling);
 #endif
             if (tmp != HANTRO_OK)
                 return (tmp);
@@ -1391,7 +1396,8 @@ u32 ProcessIntra4x4Residual(mbStorage_t *pMb,
 
 ------------------------------------------------------------------------------*/
 
-u32 ProcessResidual(mbStorage_t *pMb, i32 residualLevel[][16], u32 *coeffMap)
+u32 ProcessResidual(mbStorage_t *pMb, i32 residualLevel[][16], u32 *coeffMap,
+    const scalingLists_t *scaling)
 {
 
 /* Variables */
@@ -1408,6 +1414,9 @@ u32 ProcessResidual(mbStorage_t *pMb, i32 residualLevel[][16], u32 *coeffMap)
 
     ASSERT(pMb);
     ASSERT(residualLevel);
+
+    if (scaling)
+        return(ProcessResidualScaled(pMb, residualLevel, scaling));
 
     /* set pointers to DC coefficient blocks */
     blockDc = residualLevel + 24;
@@ -1493,6 +1502,116 @@ u32 ProcessResidual(mbStorage_t *pMb, i32 residualLevel[][16], u32 *coeffMap)
         {
             if (h264bsdProcessBlock(*blockData, chromaQp, 1,*coeffMap) !=
                 HANTRO_OK)
+                return(HANTRO_NOK);
+        }
+        else
+            MARK_RESIDUAL_EMPTY(*blockData);
+    }
+
+    return(HANTRO_OK);
+}
+
+/*------------------------------------------------------------------------------
+
+    Function: ProcessResidualScaled
+
+        Functional description:
+          ProcessResidual for scaling lists that are not flat.
+
+------------------------------------------------------------------------------*/
+
+u32 ProcessResidualScaled(mbStorage_t *pMb, i32 residualLevel[][16],
+    const scalingLists_t *scaling)
+{
+
+/* Variables */
+
+    u32 i;
+    u32 chromaQp[2];
+    i32 (*blockData)[16];
+    i32 (*blockDc)[16];
+    i16 *totalCoeff;
+    /* the Intra or the Inter lists: Y, Cb, Cr */
+    const u8 (*lists)[16];
+
+/* Code */
+
+    blockDc = residualLevel + 24;
+    blockData = residualLevel;
+    totalCoeff = pMb->totalCoeff;
+    lists = scaling->list4x4 + (IS_INTRA_MB(*pMb) ? 0 : 3);
+
+    if (h264bsdMbPartPredMode(pMb->mbType) == PRED_MODE_INTRA16x16)
+    {
+        if (totalCoeff[24])
+            h264bsdProcessLumaDcScaled(*blockDc, pMb->qpY, lists[0][0]);
+        for (i = 0; i < 16; i++, blockData++, totalCoeff++)
+        {
+            (*blockData)[0] = (*blockDc)[dcCoeffIndex[i]];
+            if ((*blockData)[0] || *totalCoeff)
+            {
+                if (h264bsdProcessBlockScaled(*blockData, pMb->qpY, 1,
+                        lists[0]) != HANTRO_OK)
+                    return(HANTRO_NOK);
+            }
+            else
+                MARK_RESIDUAL_EMPTY(*blockData);
+        }
+    }
+    else if (pMb->transform8x8)
+    {
+        for (i = 4; i--; blockData += 4, totalCoeff += 4)
+        {
+            if (totalCoeff[0] || totalCoeff[1] || totalCoeff[2] ||
+                totalCoeff[3])
+            {
+                if (h264bsdProcessBlock8x8(blockData, pMb->qpY,
+                        scaling->list8x8[IS_INTRA_MB(*pMb) ? 0 : 1]) !=
+                    HANTRO_OK)
+                    return(HANTRO_NOK);
+            }
+            else
+            {
+                MARK_RESIDUAL_EMPTY(blockData[0]);
+                MARK_RESIDUAL_EMPTY(blockData[1]);
+                MARK_RESIDUAL_EMPTY(blockData[2]);
+                MARK_RESIDUAL_EMPTY(blockData[3]);
+            }
+        }
+    }
+    else
+    {
+        for (i = 16; i--; blockData++, totalCoeff++)
+        {
+            if (*totalCoeff)
+            {
+                if (h264bsdProcessBlockScaled(*blockData, pMb->qpY, 0,
+                        lists[0]) != HANTRO_OK)
+                    return(HANTRO_NOK);
+            }
+            else
+                MARK_RESIDUAL_EMPTY(*blockData);
+        }
+    }
+
+    chromaQp[0] =
+        h264bsdQpC[CLIP3(0, 51, (i32)pMb->qpY + pMb->chromaQpIndexOffset)];
+    chromaQp[1] =
+        h264bsdQpC[CLIP3(0, 51, (i32)pMb->qpY + pMb->chromaQpIndexOffset2)];
+    if (pMb->totalCoeff[25] || pMb->totalCoeff[26])
+    {
+        h264bsdProcessChromaDcScaled(residualLevel[25], chromaQp[0],
+            lists[1][0]);
+        h264bsdProcessChromaDcScaled(residualLevel[25] + 4, chromaQp[1],
+            lists[2][0]);
+    }
+    for (i = 0; i < 8; i++, blockData++, totalCoeff++)
+    {
+        (*blockData)[0] = residualLevel[25][i];
+        if ((*blockData)[0] || *totalCoeff)
+        {
+            if (h264bsdProcessBlockScaled(*blockData, chromaQp[i >> 2], 1,
+                    lists[1 + (i >> 2)]) != HANTRO_OK)
                 return(HANTRO_NOK);
         }
         else

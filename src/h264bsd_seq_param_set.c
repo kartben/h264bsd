@@ -206,10 +206,6 @@ u32 h264bsdDecodeSeqParamSet(strmData_t *pStrmData, seqParamSet_t *pSeqParamSet)
             /* fall-back rule A */
             h264bsdScalingListFallBack(&pSeqParamSet->scalingLists, present,
                 NULL);
-
-            /* not applied yet */
-            EPRINT("seq_scaling_matrix_present_flag");
-            return(HANTRO_NOK);
         }
     }
 

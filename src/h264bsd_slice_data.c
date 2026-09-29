@@ -99,6 +99,7 @@ u32 h264bsdDecodeSliceData(strmData_t *pStrmData, storage_t *pStorage,
     u32 mbCount;
     i32 qpY;
     macroblockLayer_t *mbLayer;
+    const scalingLists_t *scaling;
 
 /* Code */
 
@@ -128,6 +129,10 @@ u32 h264bsdDecodeSliceData(strmData_t *pStrmData, storage_t *pStorage,
     /* initial quantization parameter for the slice is obtained as the sum of
      * initial QP for the picture and sliceQpDelta for the current slice */
     qpY = (i32)pStorage->activePps->picInitQp + pSliceHeader->sliceQpDelta;
+
+    /* NULL for the flat lists of any stream without scaling matrices */
+    scaling = h264bsdGetScalingLists(pStorage->activeSps, pStorage->activePps,
+        &pStorage->scalingLists) ? NULL : &pStorage->scalingLists;
     do
     {
         /* primary picture and already decoded macroblock -> error */
@@ -186,7 +191,7 @@ u32 h264bsdDecodeSliceData(strmData_t *pStrmData, storage_t *pStorage,
 
         tmp = h264bsdDecodeMacroblock(pStorage->mb + currMbAddr, mbLayer,
             currImage, pStorage->dpb, &qpY, currMbAddr,
-            pStorage->activePps->constrainedIntraPredFlag, data);
+            pStorage->activePps->constrainedIntraPredFlag, data, scaling);
         if (tmp != HANTRO_OK)
         {
             EPRINT("MACRO_BLOCK");

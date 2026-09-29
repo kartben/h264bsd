@@ -349,10 +349,6 @@ u32 h264bsdDecodePicParamSet(strmData_t *pStrmData, picParamSet_t *pPicParamSet)
                 6 + 2 * pPicParamSet->transform8x8Flag);
             if (tmp != HANTRO_OK)
                 return(tmp);
-
-            /* not applied yet */
-            EPRINT("pic_scaling_matrix_present_flag");
-            return(HANTRO_NOK);
         }
 
         tmp = h264bsdDecodeExpGolombSigned(pStrmData, &itmp);
@@ -373,3 +369,55 @@ u32 h264bsdDecodePicParamSet(strmData_t *pStrmData, picParamSet_t *pPicParamSet)
 
 }
 
+/*------------------------------------------------------------------------------
+
+    Function name: h264bsdGetScalingLists
+
+        Functional description:
+            Work out the scaling lists in effect for a picture parameter set
+            used with a sequence parameter set.
+
+        Inputs:
+            pSps            active sequence parameter set
+            pPps            active picture parameter set
+
+        Outputs:
+            pLists          the lists, only written if not flat
+
+        Returns:
+            HANTRO_TRUE     all lists are flat, pLists not written
+            HANTRO_FALSE    pLists holds the lists
+
+------------------------------------------------------------------------------*/
+
+u32 h264bsdGetScalingLists(const seqParamSet_t *pSps,
+    const picParamSet_t *pPps, scalingLists_t *pLists)
+{
+
+/* Variables */
+
+    u32 i;
+    const u8 *p;
+
+/* Code */
+
+    if (pPps->scalingMatrixPresentFlag)
+    {
+        *pLists = pPps->scalingLists;
+        /* fall-back rule B if the sequence has lists, A otherwise */
+        h264bsdScalingListFallBack(pLists, pPps->scalingListPresent,
+            pSps->scalingMatrixPresentFlag ? &pSps->scalingLists : NULL);
+    }
+    else if (pSps->scalingMatrixPresentFlag)
+        *pLists = pSps->scalingLists;
+    else
+        return(HANTRO_TRUE);
+
+    /* explicit lists may still be flat */
+    for (i = sizeof(scalingLists_t), p = (const u8 *)pLists; i--; p++)
+        if (*p != 16)
+            return(HANTRO_FALSE);
+
+    return(HANTRO_TRUE);
+
+}

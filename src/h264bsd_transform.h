@@ -58,6 +58,9 @@ void h264bsdProcessLumaDc(i32 *data, u32 qp);
 void h264bsdProcessChromaDc(i32 *data, u32 qp, u32 qpCr);
 
 u32 h264bsdProcessBlock8x8(i32 (*data)[16], u32 qp, const u8 *weights);
+u32 h264bsdProcessBlockScaled(i32 *data, u32 qp, u32 skip, const u8 *weights);
+void h264bsdProcessLumaDcScaled(i32 *data, u32 qp, u32 weight);
+void h264bsdProcessChromaDcScaled(i32 *data, u32 qp, u32 weight);
 
 #endif /* #ifdef H264SWDEC_TRANSFORM_H */
 
