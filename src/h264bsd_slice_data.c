@@ -175,7 +175,8 @@ u32 h264bsdDecodeSliceData(strmData_t *pStrmData, storage_t *pStorage,
             prevSkipped = HANTRO_FALSE;
             tmp = h264bsdDecodeMacroblockLayer(pStrmData, mbLayer,
                 pStorage->mb + currMbAddr, pSliceHeader->sliceType,
-                pSliceHeader->numRefIdxL0Active);
+                pSliceHeader->numRefIdxL0Active,
+                pStorage->activePps->transform8x8Flag);
             if (tmp != HANTRO_OK)
             {
                 EPRINT("macroblock_layer");

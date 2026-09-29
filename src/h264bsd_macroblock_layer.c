@@ -121,6 +121,7 @@ static u32 ProcessResidual(mbStorage_t *pMb, i32 residualLevel[][16], u32 *);
           pMb               pointer to macroblock storage structure
           sliceType         type of the current slice
           numRefIdxActive   maximum reference index
+          transform8x8Mode  transform_8x8_mode_flag of the picture
 
         Outputs:
           pMbLayer          stores the macroblock data parsed from stream
@@ -133,7 +134,7 @@ static u32 ProcessResidual(mbStorage_t *pMb, i32 residualLevel[][16], u32 *);
 
 u32 h264bsdDecodeMacroblockLayer(strmData_t *pStrmData,
     macroblockLayer_t *pMbLayer, mbStorage_t *pMb, u32 sliceType,
-    u32 numRefIdxActive)
+    u32 numRefIdxActive, u32 transform8x8Mode)
 {
 
 /* Variables */
@@ -190,15 +191,33 @@ u32 h264bsdDecodeMacroblockLayer(strmData_t *pStrmData,
     }
     else
     {
+        /* noSubMbPartSizeLessThan8x8Flag, cleared below if an 8x8 transform
+         * is not allowed for an inter macroblock */
+        u32 allow8x8 = transform8x8Mode;
+
         partMode = h264bsdMbPartPredMode(pMbLayer->mbType);
         if ( (partMode == PRED_MODE_INTER) &&
              (h264bsdNumMbPart(pMbLayer->mbType) == 4) )
         {
             tmp = DecodeSubMbPred(pStrmData, &pMbLayer->subMbPred,
                 pMbLayer->mbType, numRefIdxActive);
+            for (i = 0; i < 4; i++)
+                if (pMbLayer->subMbPred.subMbType[i] != P_L0_8x8)
+                    allow8x8 = HANTRO_FALSE;
         }
         else
         {
+            if (transform8x8Mode && pMbLayer->mbType == I_4x4)
+            {
+                /* transform_size_8x8_flag, I_NxN is Intra_8x8 if set */
+                tmp = h264bsdGetBits(pStrmData, 1);
+                if (tmp == END_OF_STREAM)
+                    return(HANTRO_NOK);
+                /* Intra_8x8 prediction is not supported yet */
+                if (tmp)
+                    return(HANTRO_NOK);
+                allow8x8 = HANTRO_FALSE;
+            }
             tmp = DecodeMbPred(pStrmData, &pMbLayer->mbPred,
                 pMbLayer->mbType, numRefIdxActive);
         }
@@ -212,6 +231,15 @@ u32 h264bsdDecodeMacroblockLayer(strmData_t *pStrmData,
             if (tmp != HANTRO_OK)
                 return(tmp);
             pMbLayer->codedBlockPattern = value;
+
+            /* transform_size_8x8_flag of an inter macroblock */
+            if (allow8x8 && (value & 0xF))
+            {
+                tmp = h264bsdGetBits(pStrmData, 1);
+                if (tmp == END_OF_STREAM)
+                    return(HANTRO_NOK);
+                pMbLayer->transformSize8x8Flag = tmp;
+            }
         }
         else
         {
@@ -984,6 +1012,9 @@ u32 h264bsdDecodeMacroblock(mbStorage_t *pMb, macroblockLayer_t *pMbLayer,
 
     mbType = pMbLayer->mbType;
     pMb->mbType = mbType;
+    /* the layer is not cleared for a skipped macroblock */
+    pMb->transform8x8 = mbType != P_Skip ?
+        (u8)pMbLayer->transformSize8x8Flag : 0;
 
     pMb->decoded++;
 
@@ -1380,6 +1411,27 @@ u32 ProcessResidual(mbStorage_t *pMb, i32 residualLevel[][16], u32 *coeffMap)
             }
             else
                 MARK_RESIDUAL_EMPTY(*blockData);
+        }
+    }
+    else if (pMb->transform8x8)
+    {
+        /* each 8x8 block has the levels of its four 4x4 blocks */
+        for (i = 4; i--; blockData += 4, totalCoeff += 4, coeffMap += 4)
+        {
+            if (totalCoeff[0] || totalCoeff[1] || totalCoeff[2] ||
+                totalCoeff[3])
+            {
+                if (h264bsdProcessBlock8x8(blockData, pMb->qpY,
+                        h264bsdFlatList8x8) != HANTRO_OK)
+                    return(HANTRO_NOK);
+            }
+            else
+            {
+                MARK_RESIDUAL_EMPTY(blockData[0]);
+                MARK_RESIDUAL_EMPTY(blockData[1]);
+                MARK_RESIDUAL_EMPTY(blockData[2]);
+                MARK_RESIDUAL_EMPTY(blockData[3]);
+            }
         }
     }
     else

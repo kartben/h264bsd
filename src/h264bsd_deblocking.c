@@ -606,6 +606,21 @@ void h264bsdFilterPicture(
 
     for (mbRow = 0, mbCol = 0; mbRow < image->height; pMb++)
     {
+        /* With an 8x8 transform a 4x4 block counts as coded when its 8x8
+         * block has coefficients (8.7.2.1), but CAVLC gave each 4x4 block
+         * the count of its own interleaved levels, which the nC prediction
+         * needed. Nothing needs those any more, so settle the counts now,
+         * before the macroblock is filtered or is the neighbour of one. */
+        if (pMb->transform8x8)
+        {
+            i16 *tc = pMb->totalCoeff;
+            u32 i;
+
+            for (i = 0; i < 16; i += 4)
+                tc[i] = tc[i+1] = tc[i+2] = tc[i+3] =
+                    tc[i] | tc[i+1] | tc[i+2] | tc[i+3];
+        }
+
         flags = GetMbFilteringFlags(pMb);
 
         if (flags)
@@ -1318,7 +1333,35 @@ u32 GetBoundaryStrengths(mbStorage_t *mb, bS_t *bS, u32 flags)
     }
 
     /* inner edges */
-if (IS_INTRA_MB(*mb))
+    if (mb->transform8x8)
+    {
+        /* only the edges of the 8x8 transform blocks are filtered */
+        bS[4].top  = bS[5].top  = bS[6].top  = bS[7].top  =
+        bS[12].top = bS[13].top = bS[14].top = bS[15].top = 0;
+        bS[1].left  = bS[3].left  = bS[5].left  = bS[7].left  =
+        bS[9].left  = bS[11].left = bS[13].left = bS[15].left = 0;
+        if (IS_INTRA_MB(*mb))
+        {
+            bS[8].top = bS[9].top = bS[10].top = bS[11].top =
+            bS[2].left = bS[6].left = bS[10].left = bS[14].left = 3;
+            nonZeroBs = HANTRO_TRUE;
+        }
+        else
+        {
+            bS[8].top = InnerBoundaryStrength(mb, 8, 2);
+            bS[9].top = InnerBoundaryStrength(mb, 9, 3);
+            bS[10].top = InnerBoundaryStrength(mb, 12, 6);
+            bS[11].top = InnerBoundaryStrength(mb, 13, 7);
+            bS[2].left = InnerBoundaryStrength(mb, 4, 1);
+            bS[6].left = InnerBoundaryStrength(mb, 6, 3);
+            bS[10].left = InnerBoundaryStrength(mb, 12, 9);
+            bS[14].left = InnerBoundaryStrength(mb, 14, 11);
+            if (bS[8].top || bS[9].top || bS[10].top || bS[11].top ||
+                bS[2].left || bS[6].left || bS[10].left || bS[14].left)
+                nonZeroBs = HANTRO_TRUE;
+        }
+    }
+    else if (IS_INTRA_MB(*mb))
     {
         bS[4].top  = bS[5].top  = bS[6].top  = bS[7].top  =
         bS[8].top  = bS[9].top  = bS[10].top = bS[11].top =

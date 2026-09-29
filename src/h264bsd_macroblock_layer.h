@@ -153,6 +153,7 @@ typedef struct
 {
     mbType_e mbType;
     u32 codedBlockPattern;
+    u32 transformSize8x8Flag;
     i32 mbQpDelta;
     mbPred_t mbPred;
     subMbPred_t subMbPred;
@@ -174,6 +175,7 @@ typedef struct mbStorage
     i16 totalCoeff[27];
 #endif
     u8 intra4x4PredMode[16];
+    u8 transform8x8;
     /* chromaQpIndexOffset is used for Cb, this one for Cr */
     i8 chromaQpIndexOffset2;
     u32 refPic[4];
@@ -192,7 +194,7 @@ typedef struct mbStorage
 
 u32 h264bsdDecodeMacroblockLayer(strmData_t *pStrmData,
     macroblockLayer_t *pMbLayer, mbStorage_t *pMb, u32 sliceType,
-    u32 numRefIdxActive);
+    u32 numRefIdxActive, u32 transform8x8Mode);
 
 u32 h264bsdNumMbPart(mbType_e mbType);
 u32 h264bsdNumSubMbPart(subMbType_e subMbType);

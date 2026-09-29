@@ -29,6 +29,7 @@
           h264bsdProcessBlock
           h264bsdProcessLumaDc
           h264bsdProcessChromaDc
+          h264bsdProcessBlock8x8
 
 ------------------------------------------------------------------------------*/
 
@@ -75,6 +76,22 @@ const u8 h264bsdZigZag8x8[64] = {
     12, 19, 26, 33, 40, 48, 41, 34, 27, 20, 13,  6,  7, 14, 21, 28,
     35, 42, 49, 56, 57, 50, 43, 36, 29, 22, 15, 23, 30, 37, 44, 51,
     58, 59, 52, 45, 38, 31, 39, 46, 53, 60, 61, 54, 47, 55, 62, 63};
+
+const u8 h264bsdFlatList8x8[64] = {
+    16,16,16,16,16,16,16,16, 16,16,16,16,16,16,16,16,
+    16,16,16,16,16,16,16,16, 16,16,16,16,16,16,16,16,
+    16,16,16,16,16,16,16,16, 16,16,16,16,16,16,16,16,
+    16,16,16,16,16,16,16,16, 16,16,16,16,16,16,16,16};
+
+/* normAdjust8x8 values of Table 8-16 (v) and the one of the six used for each
+ * raster position of an 8x8 block */
+static const u8 normAdjust8x8[6][6] = {
+    {20,18,32,19,25,24}, {22,19,35,21,28,26}, {26,23,42,24,33,31},
+    {28,25,45,26,35,33}, {32,28,51,30,40,38}, {36,32,58,34,46,43}};
+
+static const u8 posClass8x8[64] = {
+    0,3,4,3,0,3,4,3, 3,1,5,1,3,1,5,1, 4,5,2,5,4,5,2,5, 3,1,5,1,3,1,5,1,
+    0,3,4,3,0,3,4,3, 3,1,5,1,3,1,5,1, 4,5,2,5,4,5,2,5, 3,1,5,1,3,1,5,1};
 
 /*------------------------------------------------------------------------------
     4. Local function prototypes
@@ -425,6 +442,149 @@ void h264bsdProcessChromaDc(i32 *data, u32 qp, u32 qpCr)
     data[5] = ((tmp0 - tmp3) * levScale) >> levShift;
     data[6] = ((tmp1 + tmp2) * levScale) >> levShift;
     data[7] = ((tmp1 - tmp2) * levScale) >> levShift;
+
+}
+
+/*------------------------------------------------------------------------------
+
+    Function: h264bsdProcessBlock8x8
+
+        Functional description:
+            Inverse scan, inverse scaling and inverse transform of an 8x8
+            luma residual block (8.5.13). CAVLC sends the 64 levels as four
+            interleaved 4x4 blocks, the one of 8x8 scan position k being
+            element k/4 of block k%4. The result is written back as the four
+            4x4 blocks of the 8x8 block, each in raster order.
+
+        Inputs:
+            data            the four 4x4 blocks of levels
+            qp              quantization parameter
+            weights         weightScale8x8 in raster order
+
+        Outputs:
+            data            residual of the four 4x4 blocks
+
+        Returns:
+            HANTRO_OK       success
+            HANTRO_NOK      residual not in valid range [-512, 511]
+
+------------------------------------------------------------------------------*/
+
+u32 h264bsdProcessBlock8x8(i32 (*data)[16], u32 qp, const u8 *weights)
+{
+
+/* Variables */
+
+    i32 d[64];
+    u32 k, pos, qpDiv, last;
+    i32 c, round;
+    const u8 *v;
+    i32 e0, e1, e2, e3, e4, e5, e6, e7;
+    i32 f0, f1, f2, f3, f4, f5, f6, f7;
+    i32 *p;
+
+/* Code */
+
+    qpDiv = qpDiv6[qp];
+    v = normAdjust8x8[qpMod6[qp]];
+    round = qpDiv < 6 ? 1 << (5 - qpDiv) : 0;
+
+    memset(d, 0, sizeof(d));
+    last = 0;
+    for (k = 0; k < 64; k++)
+    {
+        c = data[k & 3][k >> 2];
+        if (!c)
+            continue;
+        last = k;
+        pos = h264bsdZigZag8x8[k];
+        c *= (i32)(weights[pos] * v[posClass8x8[pos]]);
+        if (qpDiv >= 6)
+            d[pos] = c * (1 << (qpDiv - 6));
+        else
+            d[pos] = (c + round) >> (6 - qpDiv);
+    }
+
+    if (last == 0)
+    {
+        /* dc only, every sample of the block gets the same residual */
+        c = (d[0] + 32) >> 6;
+        if ((u32)(c + 512) > 1023)
+            return(HANTRO_NOK);
+        for (k = 0; k < 16; k++)
+            data[0][k] = data[1][k] = data[2][k] = data[3][k] = c;
+        return(HANTRO_OK);
+    }
+
+    /* rows, those without coefficients stay zero */
+    for (k = 8, p = d; k--; p += 8)
+    {
+        if (!(p[0] | p[1] | p[2] | p[3] | p[4] | p[5] | p[6] | p[7]))
+            continue;
+        e0 = p[0] + p[4];
+        e1 = -p[3] + p[5] - p[7] - (p[7] >> 1);
+        e2 = p[0] - p[4];
+        e3 = p[1] + p[7] - p[3] - (p[3] >> 1);
+        e4 = (p[2] >> 1) - p[6];
+        e5 = -p[1] + p[7] + p[5] + (p[5] >> 1);
+        e6 = p[2] + (p[6] >> 1);
+        e7 = p[3] + p[5] + p[1] + (p[1] >> 1);
+        f0 = e0 + e6;
+        f1 = e1 + (e7 >> 2);
+        f2 = e2 + e4;
+        f3 = e3 + (e5 >> 2);
+        f4 = e2 - e4;
+        f5 = (e3 >> 2) - e5;
+        f6 = e0 - e6;
+        f7 = e7 - (e1 >> 2);
+        p[0] = f0 + f7;
+        p[1] = f2 + f5;
+        p[2] = f4 + f3;
+        p[3] = f6 + f1;
+        p[4] = f6 - f1;
+        p[5] = f4 - f3;
+        p[6] = f2 - f5;
+        p[7] = f0 - f7;
+    }
+
+    /* columns, then store as four 4x4 blocks */
+    for (k = 0, p = d; k < 8; k++, p++)
+    {
+        i32 *top = data[k >> 2] + (k & 3);
+        i32 *bot = data[2 + (k >> 2)] + (k & 3);
+
+        e0 = p[0] + p[32];
+        e1 = -p[24] + p[40] - p[56] - (p[56] >> 1);
+        e2 = p[0] - p[32];
+        e3 = p[8] + p[56] - p[24] - (p[24] >> 1);
+        e4 = (p[16] >> 1) - p[48];
+        e5 = -p[8] + p[56] + p[40] + (p[40] >> 1);
+        e6 = p[16] + (p[48] >> 1);
+        e7 = p[24] + p[40] + p[8] + (p[8] >> 1);
+        f0 = e0 + e6 + 32;
+        f1 = e1 + (e7 >> 2);
+        f2 = e2 + e4 + 32;
+        f3 = e3 + (e5 >> 2);
+        f4 = e2 - e4 + 32;
+        f5 = (e3 >> 2) - e5;
+        f6 = e0 - e6 + 32;
+        f7 = e7 - (e1 >> 2);
+        top[0]  = (f0 + f7) >> 6;
+        top[4]  = (f2 + f5) >> 6;
+        top[8]  = (f4 + f3) >> 6;
+        top[12] = (f6 + f1) >> 6;
+        bot[0]  = (f6 - f1) >> 6;
+        bot[4]  = (f4 - f3) >> 6;
+        bot[8]  = (f2 - f5) >> 6;
+        bot[12] = (f0 - f7) >> 6;
+        if (((u32)(top[0] + 512) > 1023) || ((u32)(top[4] + 512) > 1023) ||
+            ((u32)(top[8] + 512) > 1023) || ((u32)(top[12] + 512) > 1023) ||
+            ((u32)(bot[0] + 512) > 1023) || ((u32)(bot[4] + 512) > 1023) ||
+            ((u32)(bot[8] + 512) > 1023) || ((u32)(bot[12] + 512) > 1023))
+            return(HANTRO_NOK);
+    }
+
+    return(HANTRO_OK);
 
 }
 

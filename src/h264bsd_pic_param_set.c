@@ -335,12 +335,6 @@ u32 h264bsdDecodePicParamSet(strmData_t *pStrmData, picParamSet_t *pPicParamSet)
         if (tmp == END_OF_STREAM)
             return(HANTRO_NOK);
         pPicParamSet->transform8x8Flag = tmp;
-        if (tmp)
-        {
-            /* not decoded yet */
-            EPRINT("transform_8x8_mode_flag");
-            return(HANTRO_NOK);
-        }
 
         tmp = h264bsdGetBits(pStrmData, 1);
         if (tmp == END_OF_STREAM)

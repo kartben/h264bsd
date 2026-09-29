@@ -50,10 +50,14 @@
 /* raster position of each coefficient in zig-zag scan order */
 extern const u8 h264bsdZigZag4x4[16];
 extern const u8 h264bsdZigZag8x8[64];
+/* weightScale8x8 of Flat_8x8_16 */
+extern const u8 h264bsdFlatList8x8[64];
 
 u32 h264bsdProcessBlock(i32 *data, u32 qp, u32 skip, u32 coeffMap);
 void h264bsdProcessLumaDc(i32 *data, u32 qp);
 void h264bsdProcessChromaDc(i32 *data, u32 qp, u32 qpCr);
+
+u32 h264bsdProcessBlock8x8(i32 (*data)[16], u32 qp, const u8 *weights);
 
 #endif /* #ifdef H264SWDEC_TRANSFORM_H */
 
