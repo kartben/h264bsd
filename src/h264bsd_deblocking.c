@@ -613,7 +613,7 @@ void h264bsdFilterPicture(
          * before the macroblock is filtered or is the neighbour of one. */
         if (pMb->transform8x8)
         {
-            i16 *tc = pMb->totalCoeff;
+            u8 *tc = pMb->totalCoeff;
             u32 i;
 
             for (i = 0; i < 16; i += 4)

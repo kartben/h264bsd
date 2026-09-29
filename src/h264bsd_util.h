@@ -74,6 +74,34 @@
 /* macro to check if residual block is empty */
 #define IS_RESIDUAL_EMPTY(residual) ((residual)[0] == EMPTY_RESIDUAL_INDICATOR)
 
+/* Clears or copies whole 32-bit words, for the small aligned pieces of state
+ * a macroblock's decoding starts from: the C library's memset and memcpy are
+ * byte loops in the ROM of some parts, and the compiler is not told the
+ * alignment. A word type that may alias anything, and volatile stores so
+ * that the loop is not turned back into a call. */
+#if defined(__GNUC__)
+typedef u32 __attribute__((may_alias)) h264bsdWord_t;
+#else
+typedef u32 h264bsdWord_t;
+#endif
+
+static inline void h264bsdClearWords(void *p, u32 words)
+{
+    volatile h264bsdWord_t *d = (volatile h264bsdWord_t *)p;
+
+    while (words--)
+        *d++ = 0;
+}
+
+static inline void h264bsdCopyWords(void *dst, const void *src, u32 words)
+{
+    volatile h264bsdWord_t *d = (volatile h264bsdWord_t *)dst;
+    const h264bsdWord_t *s = (const h264bsdWord_t *)src;
+
+    while (words--)
+        *d++ = *s++;
+}
+
 /* Optional cycle profile of the decoding stages (H264BSD_PROFILE on an
  * Xtensa target): each stage accumulates its cycles and its calls. */
 #if defined(H264BSD_PROFILE) && defined(__XTENSA__)

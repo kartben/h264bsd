@@ -275,10 +275,10 @@ void SetMbParams(mbStorage_t *pMb, sliceHeader_t *pSlice, u32 sliceId,
     tmp2 = pSlice->sliceAlphaC0Offset;
     tmp3 = pSlice->sliceBetaOffset;
     pMb->sliceId = sliceId;
-    pMb->disableDeblockingFilterIdc = tmp1;
-    pMb->filterOffsetA = tmp2;
-    pMb->filterOffsetB = tmp3;
-    pMb->chromaQpIndexOffset = chromaQpIndexOffset;
+    pMb->disableDeblockingFilterIdc = (u8)tmp1;
+    pMb->filterOffsetA = (i8)tmp2;
+    pMb->filterOffsetB = (i8)tmp3;
+    pMb->chromaQpIndexOffset = (i8)chromaQpIndexOffset;
     pMb->chromaQpIndexOffset2 = (i8)chromaQpIndexOffset2;
 
 }

@@ -142,10 +142,9 @@ typedef struct
 {
 #ifdef H264DEC_OMXDL
     u8 posCoefBuf[27*16*3];
-    u8 totalCoeff[27];
-#else
-    i16 totalCoeff[27];
 #endif
+    /* 27 counts, and a byte that lets them be copied as words */
+    u8 totalCoeff[28];
     i32 level[26][16];
     u32 coeffMap[24];
 } residual_t;
@@ -161,29 +160,28 @@ typedef struct
     residual_t residual;
 } macroblockLayer_t;
 
+/* One of these per macroblock of the picture, written as the macroblock is
+ * decoded and read back by its neighbours and the loop filter: 160 bytes, five
+ * cache lines, with the small values kept small */
 typedef struct mbStorage
 {
     mbType_e mbType;
     u32 sliceId;
-    u32 disableDeblockingFilterIdc;
-    i32 filterOffsetA;
-    i32 filterOffsetB;
-    u32 qpY;
-    i32 chromaQpIndexOffset;
-#ifdef H264DEC_OMXDL
-    u8 totalCoeff[27];
-#else
-    i16 totalCoeff[27];
-#endif
+    u8 qpY;
+    u8 decoded;
+    u8 transform8x8;
+    u8 disableDeblockingFilterIdc;
+    i8 filterOffsetA;
+    i8 filterOffsetB;
+    /* chromaQpIndexOffset is used for Cb, chromaQpIndexOffset2 for Cr */
+    i8 chromaQpIndexOffset;
+    i8 chromaQpIndexOffset2;
+    u8 totalCoeff[28];
     /* an Intra_8x8 mode is stored for each 4x4 block of the 8x8 block */
     u8 intra4x4PredMode[16];
-    u8 transform8x8;
-    /* chromaQpIndexOffset is used for Cb, this one for Cr */
-    i8 chromaQpIndexOffset2;
-    u32 refPic[4];
+    u8 refPic[4];
     u8* refAddr[4];
     mv_t mv[16];
-    u32 decoded;
     struct mbStorage *mbA;
     struct mbStorage *mbB;
     struct mbStorage *mbC;

@@ -92,11 +92,7 @@ static u32 DecodeSubMbPred(strmData_t *pStrmData, subMbPred_t *pSubMbPred,
 static u32 DecodeResidual(strmData_t *pStrmData, residual_t *pResidual,
     mbStorage_t *pMb, mbType_e mbType, u32 codedBlockPattern);
 
-#ifdef H264DEC_OMXDL
 static u32 DetermineNc(mbStorage_t *pMb, u32 blockIndex, u8 *pTotalCoeff);
-#else
-static u32 DetermineNc(mbStorage_t *pMb, u32 blockIndex, i16 *pTotalCoeff);
-#endif
 
 static u32 CbpIntra16x16(mbType_e mbType);
 #ifdef H264DEC_OMXDL
@@ -862,11 +858,7 @@ u32 DecodeResidual(strmData_t *pStrmData, residual_t *pResidual,
           Returns the nC of a block.
 
 ------------------------------------------------------------------------------*/
-#ifdef H264DEC_OMXDL
 u32 DetermineNc(mbStorage_t *pMb, u32 blockIndex, u8 *pTotalCoeff)
-#else
-u32 DetermineNc(mbStorage_t *pMb, u32 blockIndex, i16 *pTotalCoeff)
-#endif
 {
 /*lint -e702 */
 /* Variables */
@@ -1054,11 +1046,7 @@ u32 h264bsdDecodeMacroblock(mbStorage_t *pMb, macroblockLayer_t *pMbLayer,
     if (mbType == I_PCM)
     {
         u8 *pData = (u8*)data;
-#ifdef H264DEC_OMXDL
         u8 *tot = pMb->totalCoeff;
-#else
-        i16 *tot = pMb->totalCoeff;
-#endif
         i32 *lev = pMbLayer->residual.level[0];
 
         pMb->qpY = 0;
@@ -1096,9 +1084,8 @@ u32 h264bsdDecodeMacroblock(mbStorage_t *pMb, macroblockLayer_t *pMbLayer,
 #endif
         if (mbType != P_Skip)
         {
-            memcpy(pMb->totalCoeff,
-                            pMbLayer->residual.totalCoeff,
-                            27*sizeof(*pMb->totalCoeff));
+            h264bsdCopyWords(pMb->totalCoeff,
+                pMbLayer->residual.totalCoeff, sizeof(pMb->totalCoeff) / 4);
 
             /* update qpY */
             if (pMbLayer->mbQpDelta)
@@ -1169,7 +1156,7 @@ u32 h264bsdDecodeMacroblock(mbStorage_t *pMb, macroblockLayer_t *pMbLayer,
         }
         else
         {
-            memset(pMb->totalCoeff, 0, 27*sizeof(*pMb->totalCoeff));
+            h264bsdClearWords(pMb->totalCoeff, sizeof(pMb->totalCoeff) / 4);
             pMb->qpY = (u32)*qpY;
         }
 #ifdef H264DEC_OMXDL
@@ -1423,7 +1410,7 @@ u32 ProcessResidual(mbStorage_t *pMb, i32 residualLevel[][16], u32 *coeffMap,
     u32 chromaQp, chromaQpCr;
     i32 (*blockData)[16];
     i32 (*blockDc)[16];
-    i16 *totalCoeff;
+    u8 *totalCoeff;
     i32 *chromaDc;
     const u32 *dcCoeffIdx;
 
@@ -1547,7 +1534,7 @@ u32 ProcessResidualScaled(mbStorage_t *pMb, i32 residualLevel[][16],
     u32 chromaQp[2];
     i32 (*blockData)[16];
     i32 (*blockDc)[16];
-    i16 *totalCoeff;
+    u8 *totalCoeff;
     /* the Intra or the Inter lists: Y, Cb, Cr */
     const u8 (*lists)[16];
 
