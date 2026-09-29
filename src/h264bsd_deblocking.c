@@ -146,8 +146,12 @@ enum { TOP = 0, LEFT = 1, INNER = 2 };
 #define FILTER_INNER_EDGE   0x01
 
 
-/* clipping table defined in intra_prediction.c */
-extern const u8 h264bsdClip[];
+/* Clips a filtered sample to 8 bits: two operations on a core with min and
+ * max, and no table to fetch */
+static inline i32 Clip255(i32 x)
+{
+    return x < 0 ? 0 : (x > 255 ? 255 : x);
+}
 
 /*------------------------------------------------------------------------------
     4. Local function prototypes
@@ -694,7 +698,6 @@ void FilterVerLumaEdge(
     u32 i;
     i32 p0, q0, p1, q1, p2, q2;
     u32 tmpFlag;
-    const u8 *clp = h264bsdClip + 512;
 
     u32 alpha = thresholds->alpha;
     u32 beta = thresholds->beta;
@@ -751,8 +754,8 @@ void FilterVerLumaEdge(
                 val = (((q0 - p0) << 2) + (p1 - q1) + 4) >> 3;
                 delta = CLIP3(-tmp, tmp, val);
 
-                p0 = clp[p0 + delta];
-                q0 = clp[q0 - delta];
+                p0 = Clip255(p0 + delta);
+                q0 = Clip255(q0 - delta);
                 tmp = tc;
                 data[-1] = p0;
                 data[ 0] = q0;
@@ -820,7 +823,6 @@ void FilterHorLumaEdge(
     i32 delta, tc, tmp;
     u32 i;
     u8 p0, q0, p1, q1, p2, q2;
-    const u8 *clp = h264bsdClip + 512;
     i32 val;
 
 /* Code */
@@ -871,8 +873,8 @@ void FilterHorLumaEdge(
             val = ((((q0 - p0) << 2) + (p1 - q1) + 4) >> 3);
             delta = CLIP3(-tmp, tmp, val);
 
-            p0 = clp[p0 + delta];
-            q0 = clp[q0 - delta];
+            p0 = Clip255(p0 + delta);
+            q0 = Clip255(q0 - delta);
             tmp = tc;
             data[-imageWidth] = p0;
             data[  0] = q0;
@@ -903,7 +905,6 @@ void FilterHorLuma(
     u32 i;
     i32 p0, q0, p1, q1, p2, q2;
     u32 tmpFlag;
-    const u8 *clp = h264bsdClip + 512;
     u32 alpha = thresholds->alpha;
     u32 beta = thresholds->beta;
     i32 val;
@@ -965,8 +966,8 @@ void FilterHorLuma(
                 val = ((((q0 - p0) << 2) + (p1 - q1) + 4) >> 3);
                 delta = CLIP3(-tmp, tmp, val);
 
-                p0 = clp[p0 + delta];
-                q0 = clp[q0 - delta];
+                p0 = Clip255(p0 + delta);
+                q0 = Clip255(q0 - delta);
                 tmp = tc;
                 data[-imageWidth] = p0;
                 data[  0] = q0;
@@ -1037,7 +1038,6 @@ void FilterVerChromaEdge(
 
     i32 delta, tc;
     u8 p0, q0, p1, q1;
-    const u8 *clp = h264bsdClip + 512;
 
 /* Code */
 
@@ -1056,8 +1056,8 @@ void FilterVerChromaEdge(
             tc = thresholds->tc0[bS-1] + 1;
             delta = CLIP3(-tc, tc, ((((q0 - p0) << 2) +
                       (p1 - q1) + 4) >> 3));
-            p0 = clp[p0 + delta];
-            q0 = clp[q0 - delta];
+            p0 = Clip255(p0 + delta);
+            q0 = Clip255(q0 - delta);
             data[-1] = p0;
             data[ 0] = q0;
         }
@@ -1079,8 +1079,8 @@ void FilterVerChromaEdge(
             tc = thresholds->tc0[bS-1] + 1;
             delta = CLIP3(-tc, tc, ((((q0 - p0) << 2) +
                       (p1 - q1) + 4) >> 3));
-            p0 = clp[p0 + delta];
-            q0 = clp[q0 - delta];
+            p0 = Clip255(p0 + delta);
+            q0 = Clip255(q0 - delta);
             data[-1] = p0;
             data[ 0] = q0;
         }
@@ -1113,7 +1113,6 @@ void FilterHorChromaEdge(
     i32 delta, tc;
     u32 i;
     u8 p0, q0, p1, q1;
-    const u8 *clp = h264bsdClip + 512;
 
 /* Code */
 
@@ -1139,8 +1138,8 @@ void FilterHorChromaEdge(
         {
             delta = CLIP3(-tc, tc, ((((q0 - p0) << 2) +
                       (p1 - q1) + 4) >> 3));
-            p0 = clp[p0 + delta];
-            q0 = clp[q0 - delta];
+            p0 = Clip255(p0 + delta);
+            q0 = Clip255(q0 - delta);
             data[-width] = p0;
             data[  0] = q0;
         }
@@ -1168,7 +1167,6 @@ void FilterHorChroma(
     i32 delta, tc;
     u32 i;
     u8 p0, q0, p1, q1;
-    const u8 *clp = h264bsdClip + 512;
 
 /* Code */
 
@@ -1204,8 +1202,8 @@ void FilterHorChroma(
             {
                 delta = CLIP3(-tc, tc, ((((q0 - p0) << 2) +
                           (p1 - q1) + 4) >> 3));
-                p0 = clp[p0 + delta];
-                q0 = clp[q0 - delta];
+                p0 = Clip255(p0 + delta);
+                q0 = Clip255(q0 - delta);
                 data[-width] = p0;
                 data[  0] = q0;
             }

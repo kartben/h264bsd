@@ -1305,7 +1305,6 @@ void h264bsdAddResidual(u8 *data, i32 *residual, u32 blockNum)
     u32 width;
     i32 tmp1, tmp2, tmp3, tmp4;
     u8 *tmp;
-    const u8 *clp = h264bsdClip + 512;
 
 /* Code */
 
@@ -1332,28 +1331,19 @@ void h264bsdAddResidual(u8 *data, i32 *residual, u32 blockNum)
     }
 
     tmp = data + y*width + x;
+    /* clipped arithmetically: two operations each on a core with min and
+     * max, and no table to fetch */
     for (i = 4; i; i--)
     {
-        tmp1 = *residual++;
-        tmp2 = tmp[0];
-        tmp3 = *residual++;
-        tmp4 = tmp[1];
-
-        tmp[0] = clp[tmp1 + tmp2];
-
-        tmp1 = *residual++;
-        tmp2 = tmp[2];
-
-        tmp[1] = clp[tmp3 + tmp4];
-
-        tmp3 = *residual++;
-        tmp4 = tmp[3];
-
-        tmp1 = clp[tmp1 + tmp2];
-        tmp3 = clp[tmp3 + tmp4];
-        tmp[2] = (u8)tmp1;
-        tmp[3] = (u8)tmp3;
-
+        tmp1 = tmp[0] + residual[0];
+        tmp2 = tmp[1] + residual[1];
+        tmp3 = tmp[2] + residual[2];
+        tmp4 = tmp[3] + residual[3];
+        residual += 4;
+        tmp[0] = (u8)(tmp1 < 0 ? 0 : (tmp1 > 255 ? 255 : tmp1));
+        tmp[1] = (u8)(tmp2 < 0 ? 0 : (tmp2 > 255 ? 255 : tmp2));
+        tmp[2] = (u8)(tmp3 < 0 ? 0 : (tmp3 > 255 ? 255 : tmp3));
+        tmp[3] = (u8)(tmp4 < 0 ? 0 : (tmp4 > 255 ? 255 : tmp4));
         tmp += width;
     }
 
