@@ -92,6 +92,9 @@ const u8 h264bsdFlatList8x8[64] H264BSD_HOT =
     16,16,16,16,16,16,16,16, 16,16,16,16,16,16,16,16,
     16,16,16,16,16,16,16,16, 16,16,16,16,16,16,16,16};
 
+/* the scan positions of each row of a 4x4 block, as bits of a coefficient map */
+static const u16 rowMask[4] H264BSD_HOT = {0x0063, 0x1094, 0x2908, 0xC600};
+
 /* column of levelScale used for each raster position of a 4x4 block */
 static const u8 posClass4x4[16] = {0,1,0,1, 1,2,1,2, 0,1,0,1, 1,2,1,2};
 
@@ -198,9 +201,13 @@ u32 h264bsdProcessBlock(i32 *data, u32 qp, u32 skip, u32 coeffMap)
         data[10] = (d2 * tmp1);
         data[11] = (d3 * tmp2);
 
-        /* horizontal transform */
-        for (row = 4, ptr = data; row--; ptr += 4)
+        /* horizontal transform; a row of zeros stays one, and the scan
+         * order says which rows have coefficients (the first may have the
+         * dc from elsewhere and is always done) */
+        for (row = 0, ptr = data; row < 4; row++, ptr += 4)
         {
+            if (row && !(coeffMap & rowMask[row]))
+                continue;
             tmp0 = ptr[0] + ptr[2];
             tmp1 = ptr[0] - ptr[2];
             tmp2 = (ptr[1] >> 1) - ptr[3];
@@ -223,11 +230,10 @@ u32 h264bsdProcessBlock(i32 *data, u32 qp, u32 skip, u32 coeffMap)
             data[4 ] = (tmp1 + tmp2 + 32)>>6;
             data[8 ] = (tmp1 - tmp2 + 32)>>6;
             data[12] = (tmp0 - tmp3 + 32)>>6;
-            /* check that each value is in the range [-512,511] */
-            if (((u32)(data[0] + 512) > 1023) ||
-                ((u32)(data[4] + 512) > 1023) ||
-                ((u32)(data[8] + 512) > 1023) ||
-                ((u32)(data[12] + 512) > 1023) )
+            /* check that each value is in the range [-512,511]: any value
+             * outside has a bit above the tenth set, and so has the or */
+            if ((((u32)(data[0] + 512)) | ((u32)(data[4] + 512)) |
+                 ((u32)(data[8] + 512)) | ((u32)(data[12] + 512))) > 1023)
                 return(HANTRO_NOK);
         }
     }
