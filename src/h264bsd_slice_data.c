@@ -177,11 +177,13 @@ u32 h264bsdDecodeSliceData(strmData_t *pStrmData, storage_t *pStorage,
         }
         else
         {
+            H264BSD_PROF_START(t0);
             prevSkipped = HANTRO_FALSE;
             tmp = h264bsdDecodeMacroblockLayer(pStrmData, mbLayer,
                 pStorage->mb + currMbAddr, pSliceHeader->sliceType,
                 pSliceHeader->numRefIdxL0Active,
                 pStorage->activePps->transform8x8Flag);
+            H264BSD_PROF_STOP(t0, H264BSD_PROF_PARSE);
             if (tmp != HANTRO_OK)
             {
                 EPRINT("macroblock_layer");

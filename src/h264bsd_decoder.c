@@ -476,7 +476,9 @@ u32 h264bsdDecode(storage_t *pStorage, u8 *byteStrm, u32 len, u32 picId,
 
     if (picReady)
     {
+        H264BSD_PROF_START(t0);
         h264bsdFilterPicture(pStorage->currImage, pStorage->mb);
+        H264BSD_PROF_STOP(t0, H264BSD_PROF_DEBLOCK);
 
         h264bsdResetStorage(pStorage);
 

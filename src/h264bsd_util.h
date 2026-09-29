@@ -74,6 +74,38 @@
 /* macro to check if residual block is empty */
 #define IS_RESIDUAL_EMPTY(residual) ((residual)[0] == EMPTY_RESIDUAL_INDICATOR)
 
+/* Optional cycle profile of the decoding stages (H264BSD_PROFILE on an
+ * Xtensa target): each stage accumulates its cycles and its calls. */
+#if defined(H264BSD_PROFILE) && defined(__XTENSA__)
+enum {
+    H264BSD_PROF_PARSE = 0, /* macroblock layer parsing, residual included */
+    H264BSD_PROF_CAVLC,     /* the residual part of it */
+    H264BSD_PROF_TRANSFORM, /* inverse quantisation and transforms */
+    H264BSD_PROF_INTRA,     /* intra prediction and write-out */
+    H264BSD_PROF_INTER,     /* inter prediction and write-out */
+    H264BSD_PROF_DEBLOCK,   /* the loop filter of a picture */
+    H264BSD_PROF_TOTAL,     /* h264bsdDecode */
+    H264BSD_PROF_COUNT
+};
+extern u32 h264bsdProfCycles[H264BSD_PROF_COUNT];
+extern u32 h264bsdProfCalls[H264BSD_PROF_COUNT];
+static inline u32 h264bsdProfClock(void)
+{
+    u32 c;
+    __asm__ volatile("rsr.ccount %0" : "=a"(c));
+    return c;
+}
+#define H264BSD_PROF_START(v) u32 v = h264bsdProfClock()
+#define H264BSD_PROF_STOP(v, id) \
+    do { \
+        h264bsdProfCycles[id] += h264bsdProfClock() - (v); \
+        h264bsdProfCalls[id]++; \
+    } while (0)
+#else
+#define H264BSD_PROF_START(v) ((void)0)
+#define H264BSD_PROF_STOP(v, id) ((void)0)
+#endif
+
 /* macro for assertion, used only if compiler flag _ASSERT_USED is defined */
 #ifdef _ASSERT_USED
 #define ASSERT(expr) assert(expr)

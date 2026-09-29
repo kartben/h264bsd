@@ -258,8 +258,10 @@ u32 h264bsdDecodeMacroblockLayer(strmData_t *pStrmData,
                 return(HANTRO_NOK);
             pMbLayer->mbQpDelta = itmp;
 
+            H264BSD_PROF_START(t0);
             tmp = DecodeResidual(pStrmData, &pMbLayer->residual, pMb,
                 pMbLayer->mbType, pMbLayer->codedBlockPattern);
+            H264BSD_PROF_STOP(t0, H264BSD_PROF_CAVLC);
 
             pStrmData->strmBuffReadBits =
                 (u32)(pStrmData->pStrmCurrPos - pStrmData->pStrmBuffStart) * 8 +
@@ -1155,8 +1157,12 @@ u32 h264bsdDecodeMacroblock(mbStorage_t *pMb, macroblockLayer_t *pMbLayer,
             tmp = ProcessChromaResidual(pMb, data, &pSrc);
 
 #else
-            tmp = ProcessResidual(pMb, pMbLayer->residual.level,
-                pMbLayer->residual.coeffMap, scaling);
+            {
+                H264BSD_PROF_START(t0);
+                tmp = ProcessResidual(pMb, pMbLayer->residual.level,
+                    pMbLayer->residual.coeffMap, scaling);
+                H264BSD_PROF_STOP(t0, H264BSD_PROF_TRANSFORM);
+            }
 #endif
             if (tmp != HANTRO_OK)
                 return (tmp);
@@ -1180,13 +1186,17 @@ u32 h264bsdDecodeMacroblock(mbStorage_t *pMb, macroblockLayer_t *pMbLayer,
         H264BSD_SIMD_ENTER();
         if (h264bsdMbPartPredMode(mbType) != PRED_MODE_INTER)
         {
+            H264BSD_PROF_START(t0);
             tmp = h264bsdIntraPrediction(pMb, pMbLayer, currImage, mbNum,
                 constrainedIntraPredFlag, (u8*)data);
+            H264BSD_PROF_STOP(t0, H264BSD_PROF_INTRA);
         }
         else
         {
+            H264BSD_PROF_START(t0);
             tmp = h264bsdInterPrediction(pMb, pMbLayer, dpb, mbNum,
                 currImage, (u8*)data);
+            H264BSD_PROF_STOP(t0, H264BSD_PROF_INTER);
         }
         H264BSD_SIMD_LEAVE();
         if (tmp != HANTRO_OK) return (tmp);
