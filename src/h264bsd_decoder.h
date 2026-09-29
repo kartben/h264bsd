@@ -71,6 +71,8 @@ u32* h264bsdNextOutputPictureRGBA(storage_t *pStorage, u32 *picId, u32 *isIdrPic
 u32* h264bsdNextOutputPictureBGRA(storage_t *pStorage, u32 *picId, u32 *isIdrPic, u32 *numErrMbs);
 u32* h264bsdNextOutputPictureYCbCrA(storage_t *pStorage, u32 *picId, u32 *isIdrPic, u32 *numErrMbs);
 
+u32 h264bsdPictureIsReference(storage_t *pStorage, const u8 *pic);
+
 u32 h264bsdPicWidth(storage_t *pStorage);
 u32 h264bsdPicHeight(storage_t *pStorage);
 u32 h264bsdVideoRange(storage_t *pStorage);

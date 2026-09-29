@@ -142,6 +142,8 @@ u32 h264bsdCheckGapsInFrameNum(dpbStorage_t *dpb, u32 frameNum, u32 isRefPic,
 
 dpbOutPicture_t* h264bsdDpbOutputPicture(dpbStorage_t *dpb);
 
+u32 h264bsdDpbIsReference(dpbStorage_t *dpb, const u8 *data);
+
 void h264bsdFlushDpb(dpbStorage_t *dpb);
 
 void h264bsdFreeDpb(dpbStorage_t *dpb);

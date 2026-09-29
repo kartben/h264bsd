@@ -1488,6 +1488,45 @@ dpbOutPicture_t* h264bsdDpbOutputPicture(dpbStorage_t *dpb)
 
 /*------------------------------------------------------------------------------
 
+    Function: h264bsdDpbIsReference
+
+        Functional description:
+            Function to tell whether the picture stored at 'data' is still
+            used for reference. Decoding only writes into pictures that are
+            not, so until then an output picture can be read in place.
+
+        Returns:
+            HANTRO_TRUE     picture found and used for reference
+            HANTRO_FALSE    otherwise
+
+------------------------------------------------------------------------------*/
+
+u32 h264bsdDpbIsReference(dpbStorage_t *dpb, const u8 *data)
+{
+
+/* Variables */
+
+    u32 i;
+
+/* Code */
+
+    ASSERT(dpb);
+
+    if (dpb->buffer == NULL)
+        return(HANTRO_FALSE);
+
+    for (i = 0; i <= dpb->dpbSize; i++)
+    {
+        if (dpb->buffer[i].data == data)
+            return(IS_REFERENCE(dpb->buffer[i]) ? HANTRO_TRUE : HANTRO_FALSE);
+    }
+
+    return(HANTRO_FALSE);
+
+}
+
+/*------------------------------------------------------------------------------
+
     Function: h264bsdFlushDpb
 
         Functional description:

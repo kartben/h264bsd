@@ -755,6 +755,35 @@ u32* h264bsdNextOutputPictureYCbCrA(storage_t *pStorage, u32 *picId, u32 *isIdrP
 
 /*------------------------------------------------------------------------------
 
+    Function: h264bsdPictureIsReference
+
+        Functional description:
+            Tell whether an output picture is still used for reference. While
+            it is, decoding leaves it untouched, so it can be read in place,
+            e.g. by another thread showing it, instead of being copied.
+
+        Inputs:
+            pStorage    pointer to storage structure
+            pic         picture from h264bsdNextOutputPicture
+
+        Returns:
+            HANTRO_TRUE or HANTRO_FALSE
+
+------------------------------------------------------------------------------*/
+
+u32 h264bsdPictureIsReference(storage_t *pStorage, const u8 *pic)
+{
+
+/* Code */
+
+    ASSERT(pStorage);
+
+    return(h264bsdDpbIsReference(pStorage->dpb, pic));
+
+}
+
+/*------------------------------------------------------------------------------
+
     Function: h264bsdPicWidth
 
         Functional description:
