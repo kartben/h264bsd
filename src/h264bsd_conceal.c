@@ -315,6 +315,7 @@ u32 ConcealMb(mbStorage_t *pMb, image_t *currImage, u32 row, u32 col,
     pMb->filterOffsetA = 0;
     pMb->filterOffsetB = 0;
     pMb->chromaQpIndexOffset = 0;
+    pMb->chromaQpIndexOffset2 = 0;
 
     if (IS_I_SLICE(sliceType))
         memset(data, 0, sizeof(data));

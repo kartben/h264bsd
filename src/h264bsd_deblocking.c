@@ -176,7 +176,7 @@ static void FilterLuma(u8 *data, bS_t *bS, edgeThreshold_t *thresholds,
         u32 imageWidth);
 
 static void FilterChroma(u8 *cb, u8 *cr, bS_t *bS, edgeThreshold_t *thresholds,
-        u32 imageWidth);
+        edgeThreshold_t *thresholdsCr, u32 imageWidth);
 
 static void FilterVerLumaEdge( u8 *data, u32 bS, edgeThreshold_t *thresholds,
         u32 imageWidth);
@@ -587,6 +587,8 @@ void h264bsdFilterPicture(
     mbStorage_t *pMb;
     bS_t bS[16];
     edgeThreshold_t thresholds[3];
+    edgeThreshold_t thresholdsCr[3];
+    edgeThreshold_t *thrCr;
 
 /* Code */
 
@@ -621,11 +623,19 @@ void h264bsdFilterPicture(
                 /* chroma */
                 GetChromaEdgeThresholds(thresholds, pMb, flags,
                     pMb->chromaQpIndexOffset);
+                /* Cr has its own offset in the High profiles */
+                thrCr = thresholds;
+                if (pMb->chromaQpIndexOffset2 != pMb->chromaQpIndexOffset)
+                {
+                    GetChromaEdgeThresholds(thresholdsCr, pMb, flags,
+                        pMb->chromaQpIndexOffset2);
+                    thrCr = thresholdsCr;
+                }
                 data = image->data + picSizeInMbs * 256 +
                     mbRow * picWidthInMbs * 64 + mbCol * 8;
 
                 FilterChroma((u8*)data, data + 64*picSizeInMbs, bS,
-                        thresholds, picWidthInMbs*8);
+                        thresholds, thrCr, picWidthInMbs*8);
 
             }
         }
@@ -1308,7 +1318,7 @@ u32 GetBoundaryStrengths(mbStorage_t *mb, bS_t *bS, u32 flags)
     }
 
     /* inner edges */
-    if (IS_INTRA_MB(*mb))
+if (IS_INTRA_MB(*mb))
     {
         bS[4].top  = bS[5].top  = bS[6].top  = bS[7].top  =
         bS[8].top  = bS[9].top  = bS[10].top = bS[11].top =
@@ -1692,6 +1702,7 @@ void FilterChroma(
   u8 *dataCr,
   bS_t *bS,
   edgeThreshold_t *thresholds,
+  edgeThreshold_t *thresholdsCr,
   u32 width)
 {
 
@@ -1707,6 +1718,7 @@ void FilterChroma(
     ASSERT(dataCr);
     ASSERT(bS);
     ASSERT(thresholds);
+    ASSERT(thresholdsCr);
 
     tmp = bS;
     offset = TOP;
@@ -1723,20 +1735,21 @@ void FilterChroma(
         if (tmp[0].left)
         {
             FilterVerChromaEdge(dataCb, tmp[0].left, thresholds + LEFT, width);
-            FilterVerChromaEdge(dataCr, tmp[0].left, thresholds + LEFT, width);
+            FilterVerChromaEdge(dataCr, tmp[0].left, thresholdsCr + LEFT,
+                width);
         }
         if (tmp[4].left)
         {
             FilterVerChromaEdge(dataCb+2*width, tmp[4].left, thresholds + LEFT,
                 width);
-            FilterVerChromaEdge(dataCr+2*width, tmp[4].left, thresholds + LEFT,
-                width);
+            FilterVerChromaEdge(dataCr+2*width, tmp[4].left,
+                thresholdsCr + LEFT, width);
         }
         if (tmp[2].left)
         {
             FilterVerChromaEdge(dataCb+4, tmp[2].left, thresholds + INNER,
                 width);
-            FilterVerChromaEdge(dataCr+4, tmp[2].left, thresholds + INNER,
+            FilterVerChromaEdge(dataCr+4, tmp[2].left, thresholdsCr + INNER,
                 width);
         }
         if (tmp[6].left)
@@ -1744,7 +1757,7 @@ void FilterChroma(
             FilterVerChromaEdge(dataCb+2*width+4, tmp[6].left,
                 thresholds + INNER, width);
             FilterVerChromaEdge(dataCr+2*width+4, tmp[6].left,
-                thresholds + INNER, width);
+                thresholdsCr + INNER, width);
         }
 
         /* if bS is equal for all horizontal edges of the row -> perform
@@ -1758,7 +1771,7 @@ void FilterChroma(
             {
                 FilterHorChroma(dataCb, tmp[0].top, thresholds+offset,
                     (i32)width);
-                FilterHorChroma(dataCr, tmp[0].top, thresholds+offset,
+                FilterHorChroma(dataCr, tmp[0].top, thresholdsCr+offset,
                     (i32)width);
             }
         }
@@ -1768,28 +1781,28 @@ void FilterChroma(
             {
                 FilterHorChromaEdge(dataCb, tmp[0].top, thresholds+offset,
                     (i32)width);
-                FilterHorChromaEdge(dataCr, tmp[0].top, thresholds+offset,
+                FilterHorChromaEdge(dataCr, tmp[0].top, thresholdsCr+offset,
                     (i32)width);
             }
             if (tmp[1].top)
             {
                 FilterHorChromaEdge(dataCb+2, tmp[1].top, thresholds+offset,
                     (i32)width);
-                FilterHorChromaEdge(dataCr+2, tmp[1].top, thresholds+offset,
+                FilterHorChromaEdge(dataCr+2, tmp[1].top, thresholdsCr+offset,
                     (i32)width);
             }
             if (tmp[2].top)
             {
                 FilterHorChromaEdge(dataCb+4, tmp[2].top, thresholds+offset,
                     (i32)width);
-                FilterHorChromaEdge(dataCr+4, tmp[2].top, thresholds+offset,
+                FilterHorChromaEdge(dataCr+4, tmp[2].top, thresholdsCr+offset,
                     (i32)width);
             }
             if (tmp[3].top)
             {
                 FilterHorChromaEdge(dataCb+6, tmp[3].top, thresholds+offset,
                     (i32)width);
-                FilterHorChromaEdge(dataCr+6, tmp[3].top, thresholds+offset,
+                FilterHorChromaEdge(dataCr+6, tmp[3].top, thresholdsCr+offset,
                     (i32)width);
             }
         }

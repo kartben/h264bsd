@@ -1343,7 +1343,7 @@ u32 ProcessResidual(mbStorage_t *pMb, i32 residualLevel[][16], u32 *coeffMap)
 /* Variables */
 
     u32 i;
-    u32 chromaQp;
+    u32 chromaQp, chromaQpCr;
     i32 (*blockData)[16];
     i32 (*blockDc)[16];
     i16 *totalCoeff;
@@ -1400,11 +1400,18 @@ u32 ProcessResidual(mbStorage_t *pMb, i32 residualLevel[][16], u32 *coeffMap)
     /* chroma DC processing. First chroma dc block is block with index 25 */
     chromaQp =
         h264bsdQpC[CLIP3(0, 51, (i32)pMb->qpY + pMb->chromaQpIndexOffset)];
+    /* Cr has its own offset in the High profiles */
+    chromaQpCr = chromaQp;
+    if (pMb->chromaQpIndexOffset2 != pMb->chromaQpIndexOffset)
+        chromaQpCr = h264bsdQpC[
+            CLIP3(0, 51, (i32)pMb->qpY + pMb->chromaQpIndexOffset2)];
     if (pMb->totalCoeff[25] || pMb->totalCoeff[26])
-        h264bsdProcessChromaDc(residualLevel[25], chromaQp);
+        h264bsdProcessChromaDc(residualLevel[25], chromaQp, chromaQpCr);
     chromaDc = residualLevel[25];
     for (i = 8; i--; blockData++, totalCoeff++, coeffMap++)
     {
+        if (i == 3)
+            chromaQp = chromaQpCr;
         /* set dc coefficient of chroma block */
         (*blockData)[0] = *chromaDc++;
         if ((*blockData)[0] || *totalCoeff)

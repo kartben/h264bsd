@@ -356,8 +356,9 @@ void h264bsdProcessLumaDc(i32 *data, u32 qp)
             chroma DC coefficients block
 
         Inputs:
-            data            pointer to data to be processed
-            qp              quantization parameter
+            data            pointer to data to be processed, Cb then Cr
+            qp              quantization parameter of Cb
+            qpCr            quantization parameter of Cr
 
         Outputs:
             data            processed data
@@ -366,7 +367,7 @@ void h264bsdProcessLumaDc(i32 *data, u32 qp)
             none
 
 ------------------------------------------------------------------------------*/
-void h264bsdProcessChromaDc(i32 *data, u32 qp)
+void h264bsdProcessChromaDc(i32 *data, u32 qp, u32 qpCr)
 {
 
 /* Variables */
@@ -399,6 +400,22 @@ void h264bsdProcessChromaDc(i32 *data, u32 qp)
     data[1] = ((tmp0 - tmp3) * levScale) >> levShift;
     data[2] = ((tmp1 + tmp2) * levScale) >> levShift;
     data[3] = ((tmp1 - tmp2) * levScale) >> levShift;
+
+    /* Cr has its own offset in the High profiles */
+    if (qpCr != qp)
+    {
+        qpDiv = qpDiv6[qpCr];
+        levScale = levelScale[ qpMod6[qpCr] ][0];
+        if (qpCr >= 6)
+        {
+            levScale <<= (qpDiv-1);
+            levShift = 0;
+        }
+        else
+        {
+            levShift = 1;
+        }
+    }
 
     tmp0 = data[4] + data[6];
     tmp1 = data[4] - data[6];

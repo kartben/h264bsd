@@ -174,6 +174,8 @@ typedef struct mbStorage
     i16 totalCoeff[27];
 #endif
     u8 intra4x4PredMode[16];
+    /* chromaQpIndexOffset is used for Cb, this one for Cr */
+    i8 chromaQpIndexOffset2;
     u32 refPic[4];
     u8* refAddr[4];
     mv_t mv[16];

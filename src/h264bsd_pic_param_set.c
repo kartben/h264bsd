@@ -370,12 +370,6 @@ u32 h264bsdDecodePicParamSet(strmData_t *pStrmData, picParamSet_t *pPicParamSet)
             return(HANTRO_NOK);
         }
         pPicParamSet->chromaQpIndexOffset2 = itmp;
-        if (itmp != pPicParamSet->chromaQpIndexOffset)
-        {
-            /* not decoded yet */
-            EPRINT("second_chroma_qp_index_offset");
-            return(HANTRO_NOK);
-        }
     }
 
     tmp = h264bsdRbspTrailingBits(pStrmData);

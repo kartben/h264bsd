@@ -53,7 +53,7 @@ extern const u8 h264bsdZigZag8x8[64];
 
 u32 h264bsdProcessBlock(i32 *data, u32 qp, u32 skip, u32 coeffMap);
 void h264bsdProcessLumaDc(i32 *data, u32 qp);
-void h264bsdProcessChromaDc(i32 *data, u32 qp);
+void h264bsdProcessChromaDc(i32 *data, u32 qp, u32 qpCr);
 
 #endif /* #ifdef H264SWDEC_TRANSFORM_H */
 

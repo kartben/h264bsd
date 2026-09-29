@@ -51,7 +51,7 @@
 ------------------------------------------------------------------------------*/
 
 static void SetMbParams(mbStorage_t *pMb, sliceHeader_t *pSlice, u32 sliceId,
-    i32 chromaQpIndexOffset);
+    i32 chromaQpIndexOffset, i32 chromaQpIndexOffset2);
 
 /*------------------------------------------------------------------------------
 
@@ -138,7 +138,8 @@ u32 h264bsdDecodeSliceData(strmData_t *pStrmData, storage_t *pStorage,
         }
 
         SetMbParams(pStorage->mb + currMbAddr, pSliceHeader,
-            pStorage->slice->sliceId, pStorage->activePps->chromaQpIndexOffset);
+            pStorage->slice->sliceId, pStorage->activePps->chromaQpIndexOffset,
+            pStorage->activePps->chromaQpIndexOffset2);
 
         if (!IS_I_SLICE(pSliceHeader->sliceType))
         {
@@ -241,7 +242,8 @@ u32 h264bsdDecodeSliceData(strmData_t *pStrmData, storage_t *pStorage,
         Inputs:
             pSlice      pointer to current slice header
             sliceId     id of the current slice
-            chromaQpIndexOffset
+            chromaQpIndexOffset   chroma_qp_index_offset (Cb)
+            chromaQpIndexOffset2  second_chroma_qp_index_offset (Cr)
 
         Outputs:
             pMb         pointer to macroblock structure which is updated
@@ -252,7 +254,7 @@ u32 h264bsdDecodeSliceData(strmData_t *pStrmData, storage_t *pStorage,
 ------------------------------------------------------------------------------*/
 
 void SetMbParams(mbStorage_t *pMb, sliceHeader_t *pSlice, u32 sliceId,
-    i32 chromaQpIndexOffset)
+    i32 chromaQpIndexOffset, i32 chromaQpIndexOffset2)
 {
 
 /* Variables */
@@ -269,6 +271,7 @@ void SetMbParams(mbStorage_t *pMb, sliceHeader_t *pSlice, u32 sliceId,
     pMb->filterOffsetA = tmp2;
     pMb->filterOffsetB = tmp3;
     pMb->chromaQpIndexOffset = chromaQpIndexOffset;
+    pMb->chromaQpIndexOffset2 = (i8)chromaQpIndexOffset2;
 
 }
 
