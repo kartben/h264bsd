@@ -814,32 +814,56 @@ u32 h264bsdDecodeResidualBlockCavlc(
             BUFFER_SHOW(bufferValue, bufferBits, bit, 16);
             levelPrefix = DecodeLevelPrefix(bit);
             if (levelPrefix == VLC_NOT_FOUND)
-                return(HANTRO_NOK);
-            BUFFER_FLUSH(bufferValue, bufferBits, levelPrefix+1);
-
-            if (levelPrefix < 14)
-                tmp = suffixLength;
-            else if (levelPrefix == 14)
             {
-                tmp = suffixLength ? suffixLength : 4;
+                /* level_prefix above 15, only allowed in the High
+                 * profiles: count the zeros of the next 16 bits too */
+                BUFFER_FLUSH(bufferValue, bufferBits, 16);
+                BUFFER_SHOW(bufferValue, bufferBits, bit, 16);
+                levelPrefix = DecodeLevelPrefix(bit);
+                /* from level_prefix 20 on every level is out of the 16-bit
+                 * range of 8-bit video */
+                if (levelPrefix == VLC_NOT_FOUND || levelPrefix > 3)
+                    return(HANTRO_NOK);
+                BUFFER_FLUSH(bufferValue, bufferBits, levelPrefix+1);
+                levelPrefix += 16;
+
+                /* levelCode = (15 << suffixLength) + level_suffix, + 15 if
+                 * suffixLength is 0, + (1 << (level_prefix - 3)) - 4096 */
+                if (!suffixLength)
+                    suffixLength = 1;
+                tmp = levelPrefix - 3;
+                BUFFER_GET(bufferValue, bufferBits, levelSuffix, tmp);
+                levelPrefix = (15 << suffixLength) + levelSuffix +
+                    (1 << tmp) - 4096;
             }
             else
             {
-                /* setting suffixLength to 1 here corresponds to adding 15
-                 * to levelCode value if levelPrefix == 15 and
-                 * suffixLength == 0 */
-                if (!suffixLength)
-                    suffixLength = 1;
-                tmp = 12;
-            }
+                BUFFER_FLUSH(bufferValue, bufferBits, levelPrefix+1);
 
-            if (suffixLength)
-                levelPrefix <<= suffixLength;
+                if (levelPrefix < 14)
+                    tmp = suffixLength;
+                else if (levelPrefix == 14)
+                {
+                    tmp = suffixLength ? suffixLength : 4;
+                }
+                else
+                {
+                    /* setting suffixLength to 1 here corresponds to adding 15
+                     * to levelCode value if levelPrefix == 15 and
+                     * suffixLength == 0 */
+                    if (!suffixLength)
+                        suffixLength = 1;
+                    tmp = 12;
+                }
 
-            if (tmp)
-            {
-                BUFFER_GET(bufferValue, bufferBits, levelSuffix, tmp);
-                levelPrefix += levelSuffix;
+                if (suffixLength)
+                    levelPrefix <<= suffixLength;
+
+                if (tmp)
+                {
+                    BUFFER_GET(bufferValue, bufferBits, levelSuffix, tmp);
+                    levelPrefix += levelSuffix;
+                }
             }
 
             tmp = levelPrefix;
