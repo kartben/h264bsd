@@ -84,7 +84,7 @@ static const u32 dcCoeffIndex[16] =
 ------------------------------------------------------------------------------*/
 
 static u32 DecodeMbPred(strmData_t *pStrmData, mbPred_t *pMbPred,
-    mbType_e mbType, u32 numRefIdxActive);
+    mbType_e mbType, u32 numRefIdxActive, u32 transform8x8);
 static u32 DecodeSubMbPred(strmData_t *pStrmData, subMbPred_t *pSubMbPred,
     mbType_e mbType, u32 numRefIdxActive);
 static u32 DecodeResidual(strmData_t *pStrmData, residual_t *pResidual,
@@ -213,13 +213,12 @@ u32 h264bsdDecodeMacroblockLayer(strmData_t *pStrmData,
                 tmp = h264bsdGetBits(pStrmData, 1);
                 if (tmp == END_OF_STREAM)
                     return(HANTRO_NOK);
-                /* Intra_8x8 prediction is not supported yet */
-                if (tmp)
-                    return(HANTRO_NOK);
+                pMbLayer->transformSize8x8Flag = tmp;
                 allow8x8 = HANTRO_FALSE;
             }
             tmp = DecodeMbPred(pStrmData, &pMbLayer->mbPred,
-                pMbLayer->mbType, numRefIdxActive);
+                pMbLayer->mbType, numRefIdxActive,
+                pMbLayer->transformSize8x8Flag);
         }
         if (tmp != HANTRO_OK)
             return(tmp);
@@ -380,7 +379,7 @@ u32 h264bsdNumSubMbPart(subMbType_e subMbType)
 ------------------------------------------------------------------------------*/
 
 u32 DecodeMbPred(strmData_t *pStrmData, mbPred_t *pMbPred, mbType_e mbType,
-    u32 numRefIdxActive)
+    u32 numRefIdxActive, u32 transform8x8)
 {
 
 /* Variables */
@@ -424,11 +423,13 @@ u32 DecodeMbPred(strmData_t *pStrmData, mbPred_t *pMbPred, mbType_e mbType,
             break;
 
         case PRED_MODE_INTRA4x4:
-            for (itmp = 0, i = 0; itmp < 2; itmp++)
+            if (transform8x8)
             {
+                /* prev_intra8x8_pred_mode_flag and rem_intra8x8_pred_mode
+                 * of each 8x8 block, stored at its first 4x4 block */
                 value = h264bsdShowBits32(pStrmData);
                 tmp = 0;
-                for (j = 8; j--; i++)
+                for (i = 0; i < 16; i += 4)
                 {
                     pMbPred->prevIntra4x4PredModeFlag[i] =
                         value & 0x80000000 ? HANTRO_TRUE : HANTRO_FALSE;
@@ -440,8 +441,30 @@ u32 DecodeMbPred(strmData_t *pStrmData, mbPred_t *pMbPred, mbType_e mbType,
                         tmp++;
                     }
                 }
-                if (h264bsdFlushBits(pStrmData, 8 + 3*tmp) == END_OF_STREAM)
+                if (h264bsdFlushBits(pStrmData, 4 + 3*tmp) == END_OF_STREAM)
                     return(HANTRO_NOK);
+            }
+            else
+            {
+                for (itmp = 0, i = 0; itmp < 2; itmp++)
+                {
+                    value = h264bsdShowBits32(pStrmData);
+                    tmp = 0;
+                    for (j = 8; j--; i++)
+                    {
+                        pMbPred->prevIntra4x4PredModeFlag[i] =
+                            value & 0x80000000 ? HANTRO_TRUE : HANTRO_FALSE;
+                        value <<= 1;
+                        if (!pMbPred->prevIntra4x4PredModeFlag[i])
+                        {
+                            pMbPred->remIntra4x4PredMode[i] = value>>29;
+                            value <<= 3;
+                            tmp++;
+                        }
+                    }
+                    if (h264bsdFlushBits(pStrmData, 8 + 3*tmp) == END_OF_STREAM)
+                        return(HANTRO_NOK);
+                }
             }
             /* fall-through */
 

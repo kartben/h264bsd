@@ -28,6 +28,7 @@
           h264bsdGetNeighbourPels
           h264bsdIntra16x16Prediction
           h264bsdIntra4x4Prediction
+          h264bsdIntra8x8Prediction
           h264bsdIntraChromaPrediction
           h264bsdAddResidual
           Intra16x16VerticalPrediction
@@ -186,6 +187,8 @@ static void Intra4x4VerticalRightPrediction(u8 *data, u8 *above, u8 *left);
 static void Intra4x4HorizontalDownPrediction(u8 *data, u8 *above, u8 *left);
 static void Intra4x4VerticalLeftPrediction(u8 *data, u8 *above);
 static void Intra4x4HorizontalUpPrediction(u8 *data, u8 *left);
+static void Intra8x8Predict(u8 *data, const u8 *e, u32 mode, u32 availableA,
+    u32 availableB);
 void h264bsdAddResidual(u8 *data, i32 *residual, u32 blockNum);
 
 static void Write4x4To16x16(u8 *data, u8 *data4x4, u32 blockNum);
@@ -504,6 +507,23 @@ u32 h264bsdIntraPrediction(mbStorage_t *pMb, macroblockLayer_t *mbLayer,
     {
         tmp = h264bsdIntra16x16Prediction(pMb, data, mbLayer->residual.level,
             pelAbove, pelLeft, constrainedIntraPred);
+        if (tmp != HANTRO_OK)
+            return(tmp);
+    }
+    else if (pMb->transform8x8)
+    {
+        /* the top-right 8x8 block reaches 8 samples past the macroblock
+         * above, pelAbove only has 4 of them */
+        u8 pelAboveRight[8];
+        u32 width = image->width;
+        u32 row = mbNum / width;
+        u32 col = mbNum - row * width;
+
+        if (row && col < width - 1)
+            memcpy(pelAboveRight, image->data +
+                (row * 16 - 1) * width * 16 + col * 16 + 16, 8);
+        tmp = h264bsdIntra8x8Prediction(pMb, data, mbLayer,
+            pelAbove, pelLeft, pelAboveRight, constrainedIntraPred);
         if (tmp != HANTRO_OK)
             return(tmp);
     }
@@ -829,6 +849,357 @@ u32 h264bsdIntra4x4Prediction(mbStorage_t *pMb, u8 *data,
     }
 
     return(HANTRO_OK);
+
+}
+
+/*------------------------------------------------------------------------------
+
+    Function: h264bsdIntra8x8Prediction
+
+        Functional description:
+          Perform Intra_8x8 prediction (8.3.2) of the four 8x8 luma blocks of
+          an I_NxN macroblock coded with transform_size_8x8_flag and add the
+          residual. The mode of each 8x8 block is stored for each of its 4x4
+          blocks, which is what the Intra_4x4 and Intra_8x8 mode prediction of
+          later blocks expect of an Intra_8x8 neighbour.
+
+        Inputs:
+          above         samples above the macroblock, above[0] above-left
+          left          samples left of the macroblock
+          aboveRight    the 8 samples above-right of the macroblock, only
+                        read if the macroblock above-right is available
+
+------------------------------------------------------------------------------*/
+
+u32 h264bsdIntra8x8Prediction(mbStorage_t *pMb, u8 *data,
+    macroblockLayer_t *mbLayer, u8 *above, u8 *left, u8 *aboveRight,
+    u32 constrainedIntraPred)
+{
+
+/* Variables */
+
+    u32 block, idx, i, x, y;
+    u32 mode;
+    neighbour_t neighbour, neighbourB;
+    mbStorage_t *nMb, *nMb2;
+    u32 availableA, availableB, availableC, availableD;
+    /* unfiltered and filtered reference samples: p[-1,7-i] at i = 0..7,
+     * p[-1,-1] at 8 and p[i-9,-1] at i = 9..24 */
+    u8 p[25], e[25];
+    u8 *ptr;
+
+/* Code */
+
+    ASSERT(data);
+    ASSERT(mbLayer);
+    ASSERT(above);
+    ASSERT(left);
+
+    for (block = 0; block < 4; block++)
+    {
+        idx = block * 4;
+        x = (block & 1) * 8;
+        y = (block >> 1) * 8;
+
+        /* A and B of the first 4x4 block are those of the 8x8 block, and
+         * lead to the right 4x4 block of the neighbouring 8x8 block for the
+         * mode prediction (luma8x8BlkIdxN * 4 + 1 for A, + 2 for B) */
+        neighbour = *h264bsdNeighbour4x4BlockA(idx);
+        nMb = h264bsdGetNeighbourMb(pMb, neighbour.mb);
+        availableA = h264bsdIsNeighbourAvailable(pMb, nMb);
+        if (availableA && constrainedIntraPred &&
+           ( h264bsdMbPartPredMode(nMb->mbType) == PRED_MODE_INTER) )
+            availableA = HANTRO_FALSE;
+
+        neighbourB = *h264bsdNeighbour4x4BlockB(idx);
+        nMb2 = h264bsdGetNeighbourMb(pMb, neighbourB.mb);
+        availableB = h264bsdIsNeighbourAvailable(pMb, nMb2);
+        if (availableB && constrainedIntraPred &&
+           ( h264bsdMbPartPredMode(nMb2->mbType) == PRED_MODE_INTER) )
+            availableB = HANTRO_FALSE;
+
+        mode = DetermineIntra4x4PredMode(mbLayer,
+            (u32)(availableA && availableB),
+            &neighbour, &neighbourB, idx, nMb, nMb2);
+        pMb->intra4x4PredMode[idx] = pMb->intra4x4PredMode[idx+1] =
+        pMb->intra4x4PredMode[idx+2] = pMb->intra4x4PredMode[idx+3] = (u8)mode;
+
+        /* C of the 8x8 block is C of its top-right 4x4 block */
+        neighbour = *h264bsdNeighbour4x4BlockC(idx + 1);
+        nMb = h264bsdGetNeighbourMb(pMb, neighbour.mb);
+        availableC = h264bsdIsNeighbourAvailable(pMb, nMb);
+        if (availableC && constrainedIntraPred &&
+           ( h264bsdMbPartPredMode(nMb->mbType) == PRED_MODE_INTER) )
+            availableC = HANTRO_FALSE;
+
+        neighbour = *h264bsdNeighbour4x4BlockD(idx);
+        nMb = h264bsdGetNeighbourMb(pMb, neighbour.mb);
+        availableD = h264bsdIsNeighbourAvailable(pMb, nMb);
+        if (availableD && constrainedIntraPred &&
+           ( h264bsdMbPartPredMode(nMb->mbType) == PRED_MODE_INTER) )
+            availableD = HANTRO_FALSE;
+
+        /* gather the reference samples */
+        if (availableA)
+        {
+            if (x == 0)
+                for (i = 0; i < 8; i++)
+                    p[7-i] = left[y+i];
+            else
+                for (i = 0, ptr = data + y*16 + x - 1; i < 8; i++, ptr += 16)
+                    p[7-i] = *ptr;
+        }
+        if (availableD)
+        {
+            if (y == 0)
+                p[8] = above[x];
+            else if (x == 0)
+                p[8] = left[y-1];
+            else
+                p[8] = data[(y-1)*16 + x - 1];
+        }
+        if (availableB)
+        {
+            ptr = y == 0 ? above + 1 + x : data + (y-1)*16 + x;
+            for (i = 0; i < 8; i++)
+                p[9+i] = ptr[i];
+            if (availableC)
+            {
+                /* the above-right samples are the next 8 of the same row,
+                 * but for the top-right block which reaches into the
+                 * macroblock above-right */
+                ptr = block == 1 ? aboveRight : ptr + 8;
+                for (i = 0; i < 8; i++)
+                    p[17+i] = ptr[i];
+            }
+            else
+                for (i = 8; i < 16; i++)
+                    p[9+i] = p[16];
+        }
+
+        /* reference sample filtering (8.3.2.2.1) */
+        if (availableB)
+        {
+            if (availableD)
+                e[9] = (p[8] + 2*p[9] + p[10] + 2) >> 2;
+            else
+                e[9] = (3*p[9] + p[10] + 2) >> 2;
+            for (i = 10; i < 24; i++)
+                e[i] = (p[i-1] + 2*p[i] + p[i+1] + 2) >> 2;
+            e[24] = (p[23] + 3*p[24] + 2) >> 2;
+        }
+        if (availableD)
+        {
+            if (availableA && availableB)
+                e[8] = (p[9] + 2*p[8] + p[7] + 2) >> 2;
+            else if (availableB)
+                e[8] = (3*p[8] + p[9] + 2) >> 2;
+            else if (availableA)
+                e[8] = (3*p[8] + p[7] + 2) >> 2;
+            else
+                e[8] = p[8];
+        }
+        if (availableA)
+        {
+            if (availableD)
+                e[7] = (p[8] + 2*p[7] + p[6] + 2) >> 2;
+            else
+                e[7] = (3*p[7] + p[6] + 2) >> 2;
+            for (i = 1; i < 7; i++)
+                e[i] = (p[i+1] + 2*p[i] + p[i-1] + 2) >> 2;
+            e[0] = (p[1] + 3*p[0] + 2) >> 2;
+        }
+
+        switch (mode)
+        {
+            case 0: /* Intra_8x8_Vertical */
+            case 3: /* Intra_8x8_Diagonal_Down_Left */
+            case 7: /* Intra_8x8_Vertical_Left */
+                if (!availableB)
+                    return(HANTRO_NOK);
+                break;
+            case 1: /* Intra_8x8_Horizontal */
+            case 8: /* Intra_8x8_Horizontal_Up */
+                if (!availableA)
+                    return(HANTRO_NOK);
+                break;
+            case 2: /* Intra_8x8_DC */
+                break;
+            default: /* Diagonal_Down_Right, Vertical_Right, Horizontal_Down */
+                if (!availableA || !availableB || !availableD)
+                    return(HANTRO_NOK);
+                break;
+        }
+
+        Intra8x8Predict(data + y*16 + x, e, mode, availableA, availableB);
+
+        for (i = 0; i < 4; i++)
+            h264bsdAddResidual(data, mbLayer->residual.level[idx+i], idx+i);
+    }
+
+    return(HANTRO_OK);
+
+}
+
+/*------------------------------------------------------------------------------
+
+    Function: Intra8x8Predict
+
+        Functional description:
+          Predict one 8x8 block from the filtered reference samples e, laid
+          out as in h264bsdIntra8x8Prediction, into data (stride 16).
+
+------------------------------------------------------------------------------*/
+
+void Intra8x8Predict(u8 *data, const u8 *e, u32 mode, u32 availableA,
+    u32 availableB)
+{
+
+/* Variables */
+
+    i32 x, y, z, k;
+    u32 tmp;
+    /* filtered p[x,-1] for x = -1..15 and p[-1,y] for y = -1..7 */
+    const u8 *t = e + 9;
+#define L(n) e[7-(n)]
+
+/* Code */
+
+    switch (mode)
+    {
+        case 0: /* Intra_8x8_Vertical */
+            for (y = 0; y < 8; y++)
+                for (x = 0; x < 8; x++)
+                    data[y*16+x] = t[x];
+            break;
+
+        case 1: /* Intra_8x8_Horizontal */
+            for (y = 0; y < 8; y++)
+                for (x = 0; x < 8; x++)
+                    data[y*16+x] = L(y);
+            break;
+
+        case 2: /* Intra_8x8_DC */
+            tmp = 0;
+            if (availableA && availableB)
+            {
+                for (k = 0; k < 8; k++)
+                    tmp += t[k] + L(k);
+                tmp = (tmp + 8) >> 4;
+            }
+            else if (availableA)
+            {
+                for (k = 0; k < 8; k++)
+                    tmp += L(k);
+                tmp = (tmp + 4) >> 3;
+            }
+            else if (availableB)
+            {
+                for (k = 0; k < 8; k++)
+                    tmp += t[k];
+                tmp = (tmp + 4) >> 3;
+            }
+            else
+                tmp = 128;
+            for (y = 0; y < 8; y++)
+                for (x = 0; x < 8; x++)
+                    data[y*16+x] = (u8)tmp;
+            break;
+
+        case 3: /* Intra_8x8_Diagonal_Down_Left */
+            for (y = 0; y < 8; y++)
+                for (x = 0; x < 8; x++)
+                {
+                    if (x == 7 && y == 7)
+                        data[y*16+x] = (t[14] + 3*t[15] + 2) >> 2;
+                    else
+                        data[y*16+x] =
+                            (t[x+y] + 2*t[x+y+1] + t[x+y+2] + 2) >> 2;
+                }
+            break;
+
+        case 4: /* Intra_8x8_Diagonal_Down_Right */
+            /* the samples run along e, from p[-1,7] to p[15,-1] */
+            for (y = 0; y < 8; y++)
+                for (x = 0; x < 8; x++)
+                {
+                    k = 8 + x - y;
+                    data[y*16+x] = (e[k-1] + 2*e[k] + e[k+1] + 2) >> 2;
+                }
+            break;
+
+        case 5: /* Intra_8x8_Vertical_Right */
+            for (y = 0; y < 8; y++)
+                for (x = 0; x < 8; x++)
+                {
+                    z = 2*x - y;
+                    k = x - (y >> 1);
+                    if (z >= 0 && !(z & 1))
+                        data[y*16+x] = (t[k-1] + t[k] + 1) >> 1;
+                    else if (z > 0)
+                        data[y*16+x] = (t[k-2] + 2*t[k-1] + t[k] + 2) >> 2;
+                    else if (z == -1)
+                        data[y*16+x] = (L(0) + 2*e[8] + t[0] + 2) >> 2;
+                    else
+                    {
+                        k = y - 2*x;
+                        data[y*16+x] =
+                            (L(k-1) + 2*L(k-2) + L(k-3) + 2) >> 2;
+                    }
+                }
+            break;
+
+        case 6: /* Intra_8x8_Horizontal_Down */
+            for (y = 0; y < 8; y++)
+                for (x = 0; x < 8; x++)
+                {
+                    z = 2*y - x;
+                    k = y - (x >> 1);
+                    if (z >= 0 && !(z & 1))
+                        data[y*16+x] = (L(k-1) + L(k) + 1) >> 1;
+                    else if (z > 0)
+                        data[y*16+x] = (L(k-2) + 2*L(k-1) + L(k) + 2) >> 2;
+                    else if (z == -1)
+                        data[y*16+x] = (L(0) + 2*e[8] + t[0] + 2) >> 2;
+                    else
+                    {
+                        k = x - 2*y;
+                        data[y*16+x] =
+                            (t[k-1] + 2*t[k-2] + t[k-3] + 2) >> 2;
+                    }
+                }
+            break;
+
+        case 7: /* Intra_8x8_Vertical_Left */
+            for (y = 0; y < 8; y++)
+                for (x = 0; x < 8; x++)
+                {
+                    k = x + (y >> 1);
+                    if (!(y & 1))
+                        data[y*16+x] = (t[k] + t[k+1] + 1) >> 1;
+                    else
+                        data[y*16+x] = (t[k] + 2*t[k+1] + t[k+2] + 2) >> 2;
+                }
+            break;
+
+        default: /* case 8: Intra_8x8_Horizontal_Up */
+            for (y = 0; y < 8; y++)
+                for (x = 0; x < 8; x++)
+                {
+                    z = x + 2*y;
+                    k = y + (x >> 1);
+                    if (z < 13 && !(z & 1))
+                        data[y*16+x] = (L(k) + L(k+1) + 1) >> 1;
+                    else if (z < 13)
+                        data[y*16+x] = (L(k) + 2*L(k+1) + L(k+2) + 2) >> 2;
+                    else if (z == 13)
+                        data[y*16+x] = (L(6) + 3*L(7) + 2) >> 2;
+                    else
+                        data[y*16+x] = L(7);
+                }
+            break;
+    }
+#undef L
 
 }
 

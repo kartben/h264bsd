@@ -55,6 +55,9 @@ u32 h264bsdIntraPrediction(mbStorage_t *pMb, macroblockLayer_t *mbLayer,
 u32 h264bsdIntra4x4Prediction(mbStorage_t *pMb, u8 *data,
                               macroblockLayer_t *mbLayer,
                               u8 *above, u8 *left, u32 constrainedIntraPred);
+u32 h264bsdIntra8x8Prediction(mbStorage_t *pMb, u8 *data,
+    macroblockLayer_t *mbLayer, u8 *above, u8 *left, u8 *aboveRight,
+    u32 constrainedIntraPred);
 u32 h264bsdIntra16x16Prediction(mbStorage_t *pMb, u8 *data, i32 residual[][16],
     u8 *above, u8 *left, u32 constrainedIntraPred);
 

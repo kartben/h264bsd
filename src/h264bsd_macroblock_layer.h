@@ -174,6 +174,7 @@ typedef struct mbStorage
 #else
     i16 totalCoeff[27];
 #endif
+    /* an Intra_8x8 mode is stored for each 4x4 block of the 8x8 block */
     u8 intra4x4PredMode[16];
     u8 transform8x8;
     /* chromaQpIndexOffset is used for Cb, this one for Cr */
