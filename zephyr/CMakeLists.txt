@@ -9,9 +9,9 @@ if(CONFIG_H264BSD)
   zephyr_library_sources(${h264bsd_sources})
   zephyr_include_directories(${h264bsd_src})
 
-  if(CONFIG_H264BSD_PIE)
-    zephyr_library_compile_definitions(H264BSD_PIE)
-  endif()
+  # Defined for every target, so that an application can see h264bsd_pie.h
+  # the way the decoder does and read h264bsdPieOn
+  zephyr_compile_definitions_ifdef(CONFIG_H264BSD_PIE H264BSD_PIE)
 
   # The decoder reaches for malloc both through its own ALLOCATE macro and
   # directly in a few places, so the redirection has to be on the names.

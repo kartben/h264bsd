@@ -42,6 +42,8 @@ void h264bsdPieLumaMid(const u8 *ref, u32 stride, u8 *mb, u32 wh, const u8 *avg,
 void h264bsdPieChroma(const u8 *ref, u32 stride, u8 *out, u32 wh, const u8 *coef, const u8 *k);
 void h264bsdPieCopy(const u8 *ref, u32 stride, u8 *out, u32 ostride, u32 wh);
 void h264bsdPieWriteMb(const u8 *data, u8 *luma, u8 *cb, u8 *cr, u32 stride);
+void h264bsdPieWriteBlocks(const u8 *data, const i32 *res, u8 *luma, u8 *cb, u8 *cr,
+                           u32 stride);
 
 #if !defined(H264BSD_SIMD_ENTER)
 #if defined(__ZEPHYR__)

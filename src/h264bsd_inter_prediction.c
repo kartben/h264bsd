@@ -43,6 +43,7 @@
 #include "h264bsd_inter_prediction.h"
 #include "h264bsd_neighbour.h"
 #include "h264bsd_util.h"
+#include "h264bsd_pie.h"
 #include "h264bsd_reconstruct.h"
 #include "h264bsd_dpb.h"
 
@@ -416,6 +417,22 @@ u32 h264bsdInterPrediction(mbStorage_t *pMb, macroblockLayer_t *pMbLayer,
                     picSize = currImage->width * currImage->height;
 
                     ref = refImage.data + (u32)yInt * width + (u32)xInt;
+#ifdef H264BSD_HAS_PIE
+                    if (h264bsdPieOn && !((uintptr_t)currImage->luma & 15))
+                    {
+                        h264bsdPieCopy(ref, width, currImage->luma, width,
+                            H264BSD_PIE_WH(16, 16));
+                        width >>= 1;
+                        ref = refImage.data + picSize * 256 +
+                            ((u32)yInt >> 1) * width + ((u32)xInt >> 1);
+                        h264bsdPieCopy(ref, width, currImage->cb, width,
+                            H264BSD_PIE_WH(8, 8));
+                        h264bsdPieCopy(ref + picSize * 64, width,
+                            currImage->cr, width, H264BSD_PIE_WH(8, 8));
+
+                        return(HANTRO_OK);
+                    }
+#endif
                     for (i = 0; i < 16; i++)
                         memcpy(currImage->luma + i * width, ref + i * width,
                             16);

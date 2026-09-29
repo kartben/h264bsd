@@ -78,7 +78,7 @@ static u32 predictBoth(u8 *out[2], mv_t *mv, image_t *ref, u32 xA, u32 yA,
     return memcmp(out[0], out[1], 384) == 0;
 }
 
-static u32 pieCheck(u8 *pic, u8 *out[2], u8 *pic2)
+static u32 pieCheck(u8 *pic, u8 *out[2], u8 *pic2, i32 (*residual)[16])
 {
     static const u8 sizes[7][2] = {
         {16, 16}, {16, 8}, {8, 16}, {8, 8}, {8, 4}, {4, 8}, {4, 4}};
@@ -141,6 +141,33 @@ static u32 pieCheck(u8 *pic, u8 *out[2], u8 *pic2)
     if (ok)
         ok = memcmp(pic2, pic2 + TEST_SIZE, TEST_SIZE) == 0;
 
+    /* the write-out with residuals, some blocks left empty */
+    for (mode = 0; mode < 2 && ok; mode++)
+    {
+        for (i = 0; i < 24; i++)
+        {
+            u32 j;
+
+            for (j = 0; j < 16; j++)
+            {
+                i32 v = (i32)(testValue(0) | (testValue(0) << 8) & 0x3FF) - 512;
+
+                residual[i][j] = mode ? v : v / 16;
+            }
+            if ((testSeed >> 8) % 3 == 0)
+                MARK_RESIDUAL_EMPTY(residual[i]);
+        }
+        for (i = 0; i < 2; i++)
+        {
+            cur.data = pic2 + i * TEST_SIZE;
+            memset(cur.data, 0xAA, TEST_SIZE);
+            h264bsdPieOn = i == 0;
+            h264bsdWriteOutputBlocks(&cur, 4, out[0], residual);
+        }
+        h264bsdPieOn = 0;
+        ok = memcmp(pic2, pic2 + TEST_SIZE, TEST_SIZE) == 0;
+    }
+
     return ok;
 }
 
@@ -148,24 +175,26 @@ void h264bsdPieInit(void)
 {
     static u32 checked;
     u8 *buf, *pic, *out[2], *pic2;
+    i32 (*residual)[16];
 
     if (checked)
         return;
     checked = 1;
     h264bsdPieOn = 0;
 
-    /* the picture, two prediction outputs and two written pictures */
-    buf = (u8*)malloc(TEST_SIZE + 2 * 384 + 2 * TEST_SIZE + 4 * 16);
+    /* the picture, two prediction outputs, two written pictures and the residuals */
+    buf = (u8*)malloc(TEST_SIZE + 2 * 384 + 2 * TEST_SIZE + 24 * 16 * 4 + 5 * 16);
     if (buf == NULL)
         return;
     pic = (u8*)ALIGN(buf, 16);
     out[0] = (u8*)ALIGN(pic + TEST_SIZE, 16);
     out[1] = (u8*)ALIGN(out[0] + 384, 16);
     pic2 = (u8*)ALIGN(out[1] + 384, 16);
+    residual = (i32 (*)[16])ALIGN(pic2 + 2 * TEST_SIZE, 16);
 
     testSeed = 0x2545F491;
     H264BSD_SIMD_ENTER();
-    h264bsdPieOn = pieCheck(pic, out, pic2);
+    h264bsdPieOn = pieCheck(pic, out, pic2, residual);
     H264BSD_SIMD_LEAVE();
 
     free(buf);

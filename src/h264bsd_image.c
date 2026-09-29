@@ -218,6 +218,13 @@ void h264bsdWriteOutputBlocks(image_t *image, u32 mbNum, u8 *data,
 
     picWidth *= 16;
 
+#ifdef H264BSD_HAS_PIE
+    if (h264bsdPieOn && !((uintptr_t)data & 15))
+    {
+        h264bsdPieWriteBlocks(data, residual[0], lum, cb, cr, picWidth);
+        return;
+    }
+#endif
     for (block = 0; block < 16; block++)
     {
         x = h264bsdBlockX[block];

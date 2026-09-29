@@ -590,3 +590,140 @@ h264bsdPieWriteMb:
 	bnez	a10, .LW_cr
 	retw.n
 	.size	h264bsdPieWriteMb, .-h264bsdPieWriteMb
+
+/*
+ * One 4x4 block of h264bsdPieWriteBlocks: prediction at a11 (row stride
+ * \pstride), residual at a12 (16 x i32, any 4-byte alignment), output at
+ * a13 with the row stride in a6. Clobbers a8, a9, a10, a11, a12, a13, q0..q6.
+ */
+.macro wblock pstride
+	l32i	a8, a12, 0
+	bne	a8, a15, 1f
+	/* no residual: a copy */
+	l32i	a8, a11, 0
+	s32i	a8, a13, 0
+	add	a13, a13, a6
+	l32i	a8, a11, \pstride
+	s32i	a8, a13, 0
+	add	a13, a13, a6
+	l32i	a8, a11, 2 * \pstride
+	s32i	a8, a13, 0
+	add	a13, a13, a6
+	l32i	a8, a11, 3 * \pstride
+	s32i	a8, a13, 0
+	j	2f
+1:	ee.ld.128.usar.ip	q0, a12, 16
+	ee.vld.128.ip	q1, a12, 16
+	ee.vld.128.ip	q2, a12, 16
+	ee.vld.128.ip	q3, a12, 16
+	ee.vld.128.ip	q4, a12, 0
+	ee.src.q	q0, q0, q1
+	ee.src.q	q1, q1, q2
+	ee.src.q	q2, q2, q3
+	ee.src.q	q3, q3, q4
+	ee.vunzip.16	q0, q1		/* rows 0 and 1 as 16-bit lanes */
+	ee.vunzip.16	q2, q3		/* rows 2 and 3 */
+	l32i	a8, a11, 0
+	ee.movi.32.q	q4, a8, 0
+	l32i	a8, a11, \pstride
+	ee.movi.32.q	q4, a8, 1
+	l32i	a8, a11, 2 * \pstride
+	ee.movi.32.q	q4, a8, 2
+	l32i	a8, a11, 3 * \pstride
+	ee.movi.32.q	q4, a8, 3
+	ee.zero.q	q5
+	ee.vzip.8	q4, q5		/* the prediction, widened */
+	ee.vadds.s16	q0, q0, q4
+	ee.vadds.s16	q2, q2, q5
+	ee.zero.q	q5
+	ee.vmax.s16	q0, q0, q5
+	ee.vmax.s16	q2, q2, q5
+	ee.vmin.s16	q0, q0, q7
+	ee.vmin.s16	q2, q2, q7
+	ee.vunzip.8	q0, q2
+	ee.movi.32.a	q0, a8, 0
+	s32i	a8, a13, 0
+	add	a13, a13, a6
+	ee.movi.32.a	q0, a8, 1
+	s32i	a8, a13, 0
+	add	a13, a13, a6
+	ee.movi.32.a	q0, a8, 2
+	s32i	a8, a13, 0
+	add	a13, a13, a6
+	ee.movi.32.a	q0, a8, 3
+	s32i	a8, a13, 0
+2:
+.endm
+
+/*
+ * void h264bsdPieWriteBlocks(const u8 *data, const i32 *res, u8 *luma,
+ *                            u8 *cb, u8 *cr, u32 stride)
+ *
+ * Writes a macroblock into the picture as its prediction (data, 256 luma
+ * then 2 x 64 chroma bytes) plus the residual of each of its 24 4x4 blocks
+ * (res, 16 values each, in the decoder's block order), clipped, or as the
+ * prediction alone where a block's residual is marked empty. stride is the
+ * luma row length in bytes, the chroma one is half.
+ */
+	.align	4
+	.global	h264bsdPieWriteBlocks
+	.type	h264bsdPieWriteBlocks, @function
+h264bsdPieWriteBlocks:
+	entry	a1, 32
+	movi	a15, -1
+	srli	a15, a15, 8		/* EMPTY_RESIDUAL_INDICATOR */
+	movi	a9, 255
+	s16i	a9, a1, 0
+	ee.vldbc.16	q7, a1
+	/* the strides go to a6 (luma, then chroma) with cr kept in a7 */
+	mov.n	a8, a6
+	mov.n	a6, a7
+	mov.n	a7, a8
+	movi	a14, 0
+.LWB_luma:
+	/* block b: x = 4 * ((b & 1) + 2 * ((b >> 2) & 1)), y likewise from bits 1 and 3 */
+	extui	a8, a14, 0, 1
+	extui	a9, a14, 2, 1
+	addx2	a8, a9, a8
+	slli	a8, a8, 2		/* x */
+	extui	a9, a14, 1, 1
+	extui	a10, a14, 3, 1
+	addx2	a9, a10, a9
+	slli	a9, a9, 2		/* y */
+	slli	a10, a9, 4
+	add	a11, a2, a10
+	add	a11, a11, a8		/* prediction */
+	mull	a10, a9, a6
+	add	a13, a4, a10
+	add	a13, a13, a8		/* output */
+	slli	a10, a14, 6
+	add	a12, a3, a10		/* residual */
+	wblock	16
+	addi	a14, a14, 1
+	blti	a14, 16, .LWB_luma
+	srli	a6, a6, 1
+.LWB_chroma:
+	extui	a8, a14, 0, 1
+	slli	a8, a8, 2		/* x */
+	extui	a9, a14, 1, 1
+	slli	a9, a9, 2		/* y */
+	slli	a10, a9, 3
+	add	a11, a2, a10
+	add	a11, a11, a8
+	addi	a11, a11, 256
+	mull	a10, a9, a6
+	add	a13, a5, a10
+	add	a13, a13, a8
+	movi	a10, 20
+	blt	a14, a10, 1f
+	addi	a11, a11, 64
+	sub	a13, a13, a5
+	add	a13, a13, a7
+1:	slli	a10, a14, 6
+	add	a12, a3, a10
+	wblock	8
+	addi	a14, a14, 1
+	movi	a10, 24
+	blt	a14, a10, .LWB_chroma
+	retw.n
+	.size	h264bsdPieWriteBlocks, .-h264bsdPieWriteBlocks
