@@ -1261,6 +1261,96 @@ void GetBoundaryStrengthsA(mbStorage_t *mb, bS_t *bS) {
             the macroblock had non-zero value, HANTRO_FALSE otherwise.
 
 ------------------------------------------------------------------------------*/
+/* One partition, so the same motion vector and reference in every block */
+static u32 IsOnePartInter(const mbStorage_t *mb)
+{
+    return mb->mbType == P_Skip || mb->mbType == P_L0_16x16;
+}
+
+/* bS of an edge between two such macroblocks where neither edge block has
+ * coefficients */
+static u32 OnePartEdge(const mbStorage_t *mb1, const mbStorage_t *mb2)
+{
+    return (mb1->refAddr[0] != mb2->refAddr[0]) ||
+           ((u32)ABS(mb1->mv[0].hor - mb2->mv[0].hor) >= 4) ||
+           ((u32)ABS(mb1->mv[0].ver - mb2->mv[0].ver) >= 4);
+}
+
+/* GetBoundaryStrengths for an inter macroblock of one partition without luma
+ * coefficients, whose inner edges all have bS 0 */
+static u32 GetBoundaryStrengthsPlain(mbStorage_t *mb, bS_t *bS, u32 flags)
+{
+    const u32 *c;
+    u32 any = 0;
+
+    if (!(flags & FILTER_TOP_EDGE))
+    {
+        bS[0].top = bS[1].top = bS[2].top = bS[3].top = 0;
+    }
+    else if (IS_INTRA_MB(*mb->mbB))
+    {
+        bS[0].top = bS[1].top = bS[2].top = bS[3].top = 4;
+        any = 1;
+    }
+    else
+    {
+        c = (const u32 *)mb->mbB->totalCoeff;
+        /* blocks 10, 11, 14 and 15 of the macroblock above */
+        if (IsOnePartInter(mb->mbB) && (c[5] | c[7]) == 0)
+        {
+            bS[0].top = bS[1].top = bS[2].top = bS[3].top = OnePartEdge(mb, mb->mbB);
+        }
+        else
+        {
+            bS[0].top = EdgeBoundaryStrength(mb, mb->mbB, 0, 10);
+            bS[1].top = EdgeBoundaryStrength(mb, mb->mbB, 1, 11);
+            bS[2].top = EdgeBoundaryStrength(mb, mb->mbB, 4, 14);
+            bS[3].top = EdgeBoundaryStrength(mb, mb->mbB, 5, 15);
+        }
+        any = bS[0].top | bS[1].top | bS[2].top | bS[3].top;
+    }
+
+    if (!(flags & FILTER_LEFT_EDGE))
+    {
+        bS[0].left = bS[4].left = bS[8].left = bS[12].left = 0;
+    }
+    else if (IS_INTRA_MB(*mb->mbA))
+    {
+        bS[0].left = bS[4].left = bS[8].left = bS[12].left = 4;
+        any = 1;
+    }
+    else
+    {
+        c = (const u32 *)mb->mbA->totalCoeff;
+        /* blocks 5, 7, 13 and 15 of the macroblock on the left */
+        if (IsOnePartInter(mb->mbA) && ((c[2] | c[3] | c[6] | c[7]) >> 16) == 0)
+        {
+            bS[0].left = bS[4].left = bS[8].left = bS[12].left = OnePartEdge(mb, mb->mbA);
+        }
+        else
+        {
+            bS[0].left = EdgeBoundaryStrength(mb, mb->mbA, 0, 5);
+            bS[4].left = EdgeBoundaryStrength(mb, mb->mbA, 2, 7);
+            bS[8].left = EdgeBoundaryStrength(mb, mb->mbA, 8, 13);
+            bS[12].left = EdgeBoundaryStrength(mb, mb->mbA, 10, 15);
+        }
+        any |= bS[0].left | bS[4].left | bS[8].left | bS[12].left;
+    }
+
+    if (!any)
+        return(HANTRO_FALSE);
+
+    bS[4].top  = bS[5].top  = bS[6].top  = bS[7].top  =
+    bS[8].top  = bS[9].top  = bS[10].top = bS[11].top =
+    bS[12].top = bS[13].top = bS[14].top = bS[15].top = 0;
+    bS[1].left  = bS[2].left  = bS[3].left  =
+    bS[5].left  = bS[6].left  = bS[7].left  =
+    bS[9].left  = bS[10].left = bS[11].left =
+    bS[13].left = bS[14].left = bS[15].left = 0;
+
+    return(HANTRO_TRUE);
+}
+
 u32 GetBoundaryStrengths(mbStorage_t *mb, bS_t *bS, u32 flags)
 {
 
@@ -1275,6 +1365,14 @@ u32 GetBoundaryStrengths(mbStorage_t *mb, bS_t *bS, u32 flags)
     ASSERT(mb);
     ASSERT(bS);
     ASSERT(flags);
+
+    if (IsOnePartInter(mb))
+    {
+        const u32 *c = (const u32 *)mb->totalCoeff;
+
+        if ((c[0] | c[1] | c[2] | c[3] | c[4] | c[5] | c[6] | c[7]) == 0)
+            return(GetBoundaryStrengthsPlain(mb, bS, flags));
+    }
 
 //    if (sample ++ % (1024 * 128) == 0) {
 //        printf("Hash A: %d, Hash B: %d, Hash C: %d, Hash D: %d\n", hashA, hashB, hashC, hashD);
