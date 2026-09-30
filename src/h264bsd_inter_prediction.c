@@ -44,6 +44,9 @@
 #include "h264bsd_neighbour.h"
 #include "h264bsd_util.h"
 #include "h264bsd_reconstruct.h"
+#ifdef H264BSD_HAS_PIE
+#include "h264bsd_pie.h"
+#endif
 #include "h264bsd_dpb.h"
 
 /*------------------------------------------------------------------------------
@@ -416,9 +419,13 @@ u32 h264bsdInterPrediction(mbStorage_t *pMb, macroblockLayer_t *pMbLayer,
                     picSize = currImage->width * currImage->height;
 
                     ref = refImage.data + (u32)yInt * width + (u32)xInt;
+#ifdef H264BSD_HAS_PIE
+                    h264bsd_pie_copy_block(currImage->luma, ref, width, 16, 16);
+#else
                     for (i = 0; i < 16; i++)
                         memcpy(currImage->luma + i * width, ref + i * width,
                             16);
+#endif
 
                     /* chroma runs at half resolution; the motion vector is
                      * a multiple of 8 and col/row of 16, so halving the
@@ -426,12 +433,18 @@ u32 h264bsdInterPrediction(mbStorage_t *pMb, macroblockLayer_t *pMbLayer,
                     width >>= 1;
                     ref = refImage.data + picSize * 256 +
                         ((u32)yInt >> 1) * width + ((u32)xInt >> 1);
+#ifdef H264BSD_HAS_PIE
+                    h264bsd_pie_copy_block(currImage->cb, ref, width, 8, 8);
+                    h264bsd_pie_copy_block(currImage->cr, ref + picSize * 64,
+                        width, 8, 8);
+#else
                     for (i = 0; i < 8; i++)
                     {
                         memcpy(currImage->cb + i * width, ref + i * width, 8);
                         memcpy(currImage->cr + i * width,
                             ref + picSize * 64 + i * width, 8);
                     }
+#endif
 
                     return(HANTRO_OK);
                 }

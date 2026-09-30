@@ -36,6 +36,9 @@
 #include "h264bsd_macroblock_layer.h"
 #include "h264bsd_image.h"
 #include "h264bsd_util.h"
+#ifdef H264BSD_HAS_PIE
+#include "h264bsd_pie.h"
+#endif
 #include "h264bsd_mve.h"
 
 #ifdef H264DEC_OMXDL
@@ -152,6 +155,12 @@ void h264bsdInterpolateChromaHor(
     }
 
     val = 8 - xFrac;
+#ifdef H264BSD_HAS_PIE
+    h264bsd_pie_chroma(pRef + (u32)y0 * width + (u32)x0, width, width * height,
+                       predPartChroma, chromaPartWidth, chromaPartHeight,
+                       xFrac, 0);
+    return;
+#endif
 
     #ifdef H264BSD_HAS_MVE
     {
@@ -266,6 +275,12 @@ void h264bsdInterpolateChromaVer(
     }
 
     val = 8 - yFrac;
+#ifdef H264BSD_HAS_PIE
+    h264bsd_pie_chroma(pRef + (u32)y0 * width + (u32)x0, width, width * height,
+                       predPartChroma, chromaPartWidth, chromaPartHeight,
+                       0, yFrac);
+    return;
+#endif
 
     #ifdef H264BSD_HAS_MVE
     {
@@ -380,6 +395,12 @@ void h264bsdInterpolateChromaHorVer(
 
     valX = 8 - xFrac;
     valY = 8 - yFrac;
+#ifdef H264BSD_HAS_PIE
+    h264bsd_pie_chroma(ref + (u32)y0 * width + (u32)x0, width, width * height,
+                       predPartChroma, chromaPartWidth, chromaPartHeight,
+                       xFrac, yFrac);
+    return;
+#endif
 
     #ifdef H264BSD_HAS_MVE
     {
@@ -580,6 +601,10 @@ void h264bsdInterpolateVerHalf(
     ptrC = ref + width;
     ptrV = ptrC + 5*width;
 
+#ifdef H264BSD_HAS_PIE
+    h264bsd_pie_ver_half(ref, width, mb, partWidth, partHeight);
+    return;
+#endif
 #ifdef H264BSD_HAS_MVE
     for (i = 0; i < partHeight; i++)
     {
@@ -710,6 +735,11 @@ void h264bsdInterpolateVerQuarter(
     }
 
     ref += (u32)y0 * width + (u32)x0;
+
+#ifdef H264BSD_HAS_PIE
+    h264bsd_pie_ver_qpel(ref, width, mb, partWidth, partHeight, verOffset);
+    return;
+#endif
 
     ptrC = ref + width;
     ptrV = ptrC + 5*width;
@@ -865,6 +895,10 @@ void h264bsdInterpolateHorHalf(
 
     ptrJ = ref + 5;
 
+#ifdef H264BSD_HAS_PIE
+    h264bsd_pie_hor_half(ref, width, mb, partWidth, partHeight);
+    return;
+#endif
     #ifdef H264BSD_HAS_MVE
     {
         u32 rr, xx;
@@ -1000,6 +1034,11 @@ void h264bsdInterpolateHorQuarter(
     }
 
     ref += (u32)y0 * width + (u32)x0;
+
+#ifdef H264BSD_HAS_PIE
+    h264bsd_pie_hor_qpel(ref, width, mb, partWidth, partHeight, horOffset);
+    return;
+#endif
 
     ptrJ = ref + 5;
 
@@ -1156,6 +1195,11 @@ void h264bsdInterpolateHorVerQuarter(
 
     /* Ref points to G + (-2, -2) */
     ref += (u32)y0 * width + (u32)x0;
+
+#ifdef H264BSD_HAS_PIE
+    h264bsd_pie_hv_qpel(ref, width, mb, partWidth, partHeight, horVerOffset);
+    return;
+#endif
 
     /* ptrJ points to either J or Q, depending on vertical offset */
 #ifdef H264BSD_HAS_MVE
@@ -1378,6 +1422,11 @@ void h264bsdInterpolateMidHalf(
 
     ref += (u32)y0 * width + (u32)x0;
 
+#ifdef H264BSD_HAS_PIE
+    h264bsd_pie_mid_half(ref, width, mb, partWidth, partHeight);
+    return;
+#endif
+
     b1 = table;
     ptrJ = ref + 5;
 
@@ -1564,6 +1613,11 @@ void h264bsdInterpolateMidVerQuarter(
     }
 
     ref += (u32)y0 * width + (u32)x0;
+
+#ifdef H264BSD_HAS_PIE
+    h264bsd_pie_mid_ver_qpel(ref, width, mb, partWidth, partHeight, verOffset);
+    return;
+#endif
 
     b1 = table;
     ptrJ = ref + 5;
@@ -1769,6 +1823,11 @@ void h264bsdInterpolateMidHorQuarter(
     }
 
     ref += (u32)y0 * width + (u32)x0;
+
+#ifdef H264BSD_HAS_PIE
+    h264bsd_pie_mid_hor_qpel(ref, width, mb, partWidth, partHeight, horOffset);
+    return;
+#endif
 
     h1 = table + tableWidth;
     ptrC = ref + width;

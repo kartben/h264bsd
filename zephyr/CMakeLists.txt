@@ -29,6 +29,23 @@ if(CONFIG_H264BSD)
       H264BSD_PICTURE_FREE=${CONFIG_H264BSD_PICTURE_FREE})
   endif()
 
+  # ESP32-P4 PIE kernels, assembled with a toolchain that knows the extension
+  if(H264BSD_PIE_CC)
+    file(GLOB pie_sources ${ZEPHYR_CURRENT_MODULE_DIR}/pie/*.S)
+    foreach(s ${pie_sources})
+      get_filename_component(n ${s} NAME_WE)
+      set(o ${CMAKE_CURRENT_BINARY_DIR}/${n}.pie.obj)
+      add_custom_command(OUTPUT ${o}
+        COMMAND ${H264BSD_PIE_CC} -march=rv32imafc_zicsr_zifencei_xesploop_xespv -mabi=ilp32f
+                -c ${s} -o ${o}.tmp
+        COMMAND ${CMAKE_OBJCOPY} --remove-section .riscv.attributes ${o}.tmp ${o}
+        DEPENDS ${s})
+      set_source_files_properties(${o} PROPERTIES EXTERNAL_OBJECT TRUE GENERATED TRUE)
+      zephyr_library_sources(${o})
+    endforeach()
+    zephyr_library_compile_definitions(H264BSD_HAS_PIE)
+  endif()
+
   # The decoder predates these warnings and is not ours to reflow
   zephyr_library_compile_options(
     -Wno-sign-compare
