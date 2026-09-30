@@ -102,6 +102,13 @@ typedef struct storage
     /* number of concealed macroblocks in the current image */
     u32 numConcealedMbs;
 
+    /* deblocking that follows the decoding: macroblocks decoded in raster
+     * order from the first one, macroblocks filtered, and whether the
+     * picture left raster order */
+    u32 dbDecoded;
+    u32 dbFiltered;
+    u32 dbOutOfOrder;
+
     /* picId given by application */
     u32 currentPicId;
 

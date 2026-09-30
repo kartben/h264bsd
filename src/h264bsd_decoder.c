@@ -472,7 +472,12 @@ u32 h264bsdDecode(storage_t *pStorage, u8 *byteStrm, u32 len, u32 picId,
 
     if (picReady)
     {
+#ifndef H264DEC_OMXDL
+        h264bsdFilterMbs(pStorage->currImage, pStorage->mb,
+            pStorage->dbFiltered, pStorage->picSizeInMbs);
+#else
         h264bsdFilterPicture(pStorage->currImage, pStorage->mb);
+#endif
 
         h264bsdResetStorage(pStorage);
 

@@ -577,6 +577,25 @@ void h264bsdFilterPicture(
   image_t *image,
   mbStorage_t *mb)
 {
+    h264bsdFilterMbs(image, mb, 0, image->width * image->height);
+}
+
+/*------------------------------------------------------------------------------
+
+    Function: h264bsdFilterMbs
+
+        Functional description:
+            Filter macroblocks first to end - 1 of the picture, in raster
+            order. The macroblocks above and on the left of the first one
+            must have been filtered already.
+
+------------------------------------------------------------------------------*/
+void h264bsdFilterMbs(
+  image_t *image,
+  mbStorage_t *mb,
+  u32 first,
+  u32 end)
+{
 
 /* Variables */
 
@@ -600,9 +619,10 @@ void h264bsdFilterPicture(
     data = image->data;
     picSizeInMbs = picWidthInMbs * image->height;
 
-    pMb = mb;
+    pMb = mb + first;
 
-    for (mbRow = 0, mbCol = 0; mbRow < image->height; pMb++)
+    for (mbRow = first / picWidthInMbs, mbCol = first % picWidthInMbs;
+         first < end; first++, pMb++)
     {
         flags = GetMbFilteringFlags(pMb);
 

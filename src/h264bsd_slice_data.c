@@ -35,6 +35,7 @@
 ------------------------------------------------------------------------------*/
 
 #include "h264bsd_slice_data.h"
+#include "h264bsd_deblocking.h"
 #include "h264bsd_util.h"
 #include "h264bsd_vlc.h"
 
@@ -195,6 +196,30 @@ u32 h264bsdDecodeSliceData(strmData_t *pStrmData, storage_t *pStorage,
          * for the first time (redundant slices) */
         if (pStorage->mb[currMbAddr].decoded == 1)
             mbCount++;
+
+#ifndef H264DEC_OMXDL
+        /* Filter a row of macroblocks at a time while they are still in the
+         * cache. Intra prediction reads a macroblock unfiltered until the
+         * one below and right of it is decoded, so the filtering stays that
+         * far behind; out of raster order it waits for the picture. */
+        if (currMbAddr == pStorage->dbDecoded && !pSliceHeader->redundantPicCnt &&
+            pStorage->activePps->numSliceGroups == 1)
+        {
+            u32 picWidthInMbs = pStorage->activeSps->picWidthInMbs;
+            u32 lag = picWidthInMbs + 1;
+
+            pStorage->dbDecoded++;
+            if (!pStorage->dbOutOfOrder &&
+                pStorage->dbDecoded >= pStorage->dbFiltered + lag + picWidthInMbs)
+            {
+                h264bsdFilterMbs(currImage, pStorage->mb, pStorage->dbFiltered,
+                    pStorage->dbDecoded - lag);
+                pStorage->dbFiltered = pStorage->dbDecoded - lag;
+            }
+        }
+        else
+            pStorage->dbOutOfOrder = HANTRO_TRUE;
+#endif
 
         /* keep on processing as long as there is stream data left or
          * processing of macroblocks to be skipped based on the last skipRun is

@@ -451,6 +451,9 @@ void h264bsdResetStorage(storage_t *pStorage)
 
     pStorage->slice->numDecodedMbs = 0;
     pStorage->slice->sliceId = 0;
+    pStorage->dbDecoded = 0;
+    pStorage->dbFiltered = 0;
+    pStorage->dbOutOfOrder = HANTRO_FALSE;
 
     for (i = 0; i < pStorage->picSizeInMbs; i++)
     {
