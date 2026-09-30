@@ -42,4 +42,34 @@ config H264BSD_FREE
 	help
 	  Releases what H264BSD_MALLOC returned.
 
+config H264BSD_DEBLOCK_THREAD
+	bool "Deblock on another CPU"
+	depends on SMP && SCHED_CPU_MASK
+	help
+	  Filter the decoded macroblocks on a thread pinned to another CPU,
+	  a row at a time behind the decoding, instead of between rows on the
+	  decoding thread. A picture is complete once its last rows have been
+	  filtered, which the decoder waits for.
+
+if H264BSD_DEBLOCK_THREAD
+
+config H264BSD_DEBLOCK_THREAD_CPU
+	int "CPU the deblocking thread runs on"
+	default 1
+	help
+	  Pick one the decoding thread does not run on.
+
+config H264BSD_DEBLOCK_THREAD_PRIORITY
+	int "Deblocking thread priority"
+	default 2
+	help
+	  The decoder waits for the last rows of every picture, so the thread
+	  should not be kept waiting by others on its CPU.
+
+config H264BSD_DEBLOCK_THREAD_STACK_SIZE
+	int "Deblocking thread stack size"
+	default 2048
+
+endif # H264BSD_DEBLOCK_THREAD
+
 endif # H264BSD

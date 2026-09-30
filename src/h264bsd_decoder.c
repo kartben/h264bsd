@@ -239,6 +239,9 @@ u32 h264bsdDecode(storage_t *pStorage, u8 *byteStrm, u32 len, u32 picId,
                 return (H264BSD_ERROR);
             }
 
+            /* concealment reads and writes what may still be filtered */
+            h264bsdDeblockSync();
+
             if (!pStorage->validSliceInAccessUnit)
             {
                 pStorage->currImage->data =
@@ -449,6 +452,7 @@ u32 h264bsdDecode(storage_t *pStorage, u8 *byteStrm, u32 len, u32 picId,
                 if (tmp != HANTRO_OK)
                 {
                     EPRINT("SLICE_DATA");
+                    h264bsdDeblockSync();
                     h264bsdMarkSliceCorrupted(pStorage,
                         pStorage->sliceHeader->firstMbInSlice);
                     return(H264BSD_ERROR);
@@ -473,8 +477,9 @@ u32 h264bsdDecode(storage_t *pStorage, u8 *byteStrm, u32 len, u32 picId,
     if (picReady)
     {
 #ifndef H264DEC_OMXDL
-        h264bsdFilterMbs(pStorage->currImage, pStorage->mb,
+        h264bsdDeblockPost(pStorage->currImage, pStorage->mb,
             pStorage->dbFiltered, pStorage->picSizeInMbs);
+        h264bsdDeblockSync();
 #else
         h264bsdFilterPicture(pStorage->currImage, pStorage->mb);
 #endif
@@ -546,6 +551,8 @@ void h264bsdShutdown(storage_t *pStorage)
 /* Code */
 
     ASSERT(pStorage);
+
+    h264bsdDeblockSync();
 
     for (i = 0; i < MAX_NUM_SEQ_PARAM_SETS; i++)
     {

@@ -212,7 +212,7 @@ u32 h264bsdDecodeSliceData(strmData_t *pStrmData, storage_t *pStorage,
             if (!pStorage->dbOutOfOrder &&
                 pStorage->dbDecoded >= pStorage->dbFiltered + lag + picWidthInMbs)
             {
-                h264bsdFilterMbs(currImage, pStorage->mb, pStorage->dbFiltered,
+                h264bsdDeblockPost(currImage, pStorage->mb, pStorage->dbFiltered,
                     pStorage->dbDecoded - lag);
                 pStorage->dbFiltered = pStorage->dbDecoded - lag;
             }

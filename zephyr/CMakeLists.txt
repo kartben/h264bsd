@@ -29,6 +29,11 @@ if(CONFIG_H264BSD)
       H264BSD_PICTURE_FREE=${CONFIG_H264BSD_PICTURE_FREE})
   endif()
 
+  if(CONFIG_H264BSD_DEBLOCK_THREAD)
+    zephyr_library_sources(h264bsd_deblock_thread.c)
+    zephyr_library_compile_definitions(H264BSD_DEBLOCK_THREAD)
+  endif()
+
   # ESP32-P4 PIE kernels, assembled with a toolchain that knows the extension
   if(H264BSD_PIE_CC)
     file(GLOB pie_sources ${ZEPHYR_CURRENT_MODULE_DIR}/pie/*.S)

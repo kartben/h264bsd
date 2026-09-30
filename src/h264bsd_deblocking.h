@@ -61,5 +61,19 @@ void h264bsdFilterMbs(
   u32 end);
 #endif
 
+/* Deblocking that follows the decoding: h264bsdDeblockPost() hands over
+ * macroblocks first to end - 1 for filtering, in raster order after those
+ * handed over before, and h264bsdDeblockSync() returns once everything handed
+ * over is filtered. Built with H264BSD_DEBLOCK_THREAD a thread of the
+ * platform glue does the filtering, otherwise it happens right away. */
+#ifdef H264BSD_DEBLOCK_THREAD
+void h264bsdDeblockPost(image_t *image, mbStorage_t *mb, u32 first, u32 end);
+void h264bsdDeblockSync(void);
+#else
+#define h264bsdDeblockPost(image, mb, first, end) \
+    h264bsdFilterMbs(image, mb, first, end)
+#define h264bsdDeblockSync() do { } while (0)
+#endif
+
 #endif /* #ifdef H264SWDEC_DEBLOCKING_H */
 
