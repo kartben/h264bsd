@@ -53,6 +53,9 @@
 #include "h264bsd_mve.h"
 #include "h264bsd_macroblock_layer.h"
 #include "h264bsd_deblocking.h"
+#ifdef H264BSD_HAS_PIE
+#include "h264bsd_pie.h"
+#endif
 #include "h264bsd_dpb.h"
 
 #ifdef H264DEC_OMXDL
@@ -910,6 +913,20 @@ void FilterHorLuma(
 //        printf("Hash A: %d, Hash B: %d\n", hashA, hashB);
 //    }
 
+#ifdef H264BSD_HAS_PIE
+    if (bS < 4)
+    {
+        i16 k[8];
+
+        k[0] = (i16)alpha;
+        k[1] = (i16)beta;
+        k[2] = (i16)thresholds->tc0[bS-1];
+        k[3] = (i16)-k[2];
+        k[4] = 1;
+        h264bsd_pie_hor_luma16(data, (u32)imageWidth, k);
+        return;
+    }
+#endif
 #ifdef H264BSD_HAS_MVE
     if (bS < 4)
     {
@@ -1723,6 +1740,32 @@ void GetChromaEdgeThresholds(
             Function to filter all luma edges of a macroblock
 
 ------------------------------------------------------------------------------*/
+#ifdef H264BSD_HAS_PIE
+/* Per-lane constants of one vertical edge for h264bsd_pie_ver_luma16: alpha,
+ * beta and 1, then tc, -tc and the enable of each of the 16 rows */
+static void PieVerK(i16 *kv, bS_t *bS, u32 e, edgeThreshold_t *th)
+{
+    u32 band, i;
+
+    kv[0] = (i16)th->alpha;
+    kv[1] = (i16)th->beta;
+    kv[4] = 1;
+    for (band = 0; band < 4; band++)
+    {
+        u32 b = bS[band * 4 + e].left;
+        i16 tc = b ? (i16)th->tc0[b - 1] : 0;
+        u32 lane = (band >> 1) * 8 + (band & 1) * 4;
+
+        for (i = 0; i < 4; i++)
+        {
+            kv[8 + lane + i] = tc;
+            kv[24 + lane + i] = (i16)-tc;
+            kv[40 + lane + i] = b ? -1 : 0;
+        }
+    }
+}
+#endif
+
 void FilterLuma(
   u8 *data,
   bS_t *bS,
@@ -1743,6 +1786,68 @@ void FilterLuma(
     ASSERT(bS);
     ASSERT(thresholds);
 
+#ifdef H264BSD_HAS_PIE
+    {
+        i16 kv[56] __attribute__((aligned(16)));
+        u32 e, band, any, strong;
+
+        /* The vector loads do not allocate cache lines: bring the rows in
+         * with scalar loads for the edges that read them next */
+        for (band = 0; band < 16; band++)
+            (void)*(volatile u32 *)(data + band * width);
+
+        /* Every vertical edge over the whole height first, then the
+         * horizontal ones: the order of the standard, which gives what the
+         * band by band order below gives */
+        for (e = 0; e < 4; e++)
+        {
+            edgeThreshold_t *th = thresholds + (e ? INNER : LEFT);
+
+            any = strong = 0;
+            for (band = 0; band < 4; band++)
+            {
+                any |= bS[band * 4 + e].left;
+                strong |= (bS[band * 4 + e].left == 4);
+            }
+            if (!any)
+                continue;
+            if (strong)
+            {
+                for (band = 0; band < 4; band++)
+                    if (bS[band * 4 + e].left)
+                        FilterVerLumaEdge(data + band * 4 * width + 4 * e,
+                            bS[band * 4 + e].left, th, width);
+                continue;
+            }
+            PieVerK(kv, bS, e, th);
+            h264bsd_pie_ver_luma16(data + 4 * e, width, kv);
+        }
+        ptr = data;
+        tmp = bS;
+        offset = TOP;
+        for (vblock = 4; vblock--;)
+        {
+            if (tmp[0].top == tmp[1].top && tmp[1].top == tmp[2].top &&
+                tmp[2].top == tmp[3].top)
+            {
+                if (tmp[0].top)
+                    FilterHorLuma(ptr, tmp[0].top, thresholds + offset,
+                        (i32)width);
+            }
+            else
+            {
+                for (e = 0; e < 4; e++)
+                    if (tmp[e].top)
+                        FilterHorLumaEdge(ptr + 4 * e, tmp[e].top,
+                            thresholds + offset, (i32)width);
+            }
+            ptr += width * 4;
+            tmp += 4;
+            offset = INNER;
+        }
+        return;
+    }
+#endif
     ptr = data;
     tmp = bS;
 

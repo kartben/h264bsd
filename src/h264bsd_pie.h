@@ -34,4 +34,8 @@ void h264bsd_pie_chroma(const u8 *ref, u32 stride, u32 plane, u8 *out,
 void h264bsd_pie_copy_block(u8 *dst, const u8 *src, u32 stride, u32 rows,
                             u32 w);
 
+/* Luma deblocking of one 16-pixel edge with bS < 4, see pie/pie_deblock.S */
+void h264bsd_pie_hor_luma16(u8 *data, u32 stride, const i16 *k);
+void h264bsd_pie_ver_luma16(u8 *data, u32 stride, const i16 *k);
+
 #endif /* H264BSD_PIE_H */
