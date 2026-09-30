@@ -30,6 +30,33 @@ static atomic_t deblock_sync;
 /* Macroblocks filtered, only touched by the thread */
 static u32 deblock_done;
 
+#ifdef H264BSD_DEBLOCK_ROWS_HOOK
+extern void H264BSD_DEBLOCK_ROWS_HOOK(const u8 *picture, u32 width, u32 height, u32 first,
+				      u32 end);
+
+/* Rows of macroblocks reported final, only touched by the thread */
+static u32 deblock_rows;
+
+/*
+ * A row is final once the row below it is filtered, whose top edges change
+ * its last lines, and the last row once the picture is.
+ */
+static void deblock_report(void)
+{
+	u32 width = deblock_image->width;
+	u32 height = deblock_image->height;
+	u32 rows = deblock_done / width;
+
+	if (deblock_done < width * height) {
+		rows = (rows > 0U) ? rows - 1U : 0U;
+	}
+	if (rows > deblock_rows) {
+		H264BSD_DEBLOCK_ROWS_HOOK(deblock_image->data, width, height, deblock_rows, rows);
+		deblock_rows = rows;
+	}
+}
+#endif
+
 static void deblock_run(void *p1, void *p2, void *p3)
 {
 	ARG_UNUSED(p1);
@@ -45,6 +72,9 @@ static void deblock_run(void *p1, void *p2, void *p3)
 		if (end > deblock_done) {
 			h264bsdFilterMbs(deblock_image, deblock_mb, deblock_done, end);
 			deblock_done = end;
+#ifdef H264BSD_DEBLOCK_ROWS_HOOK
+			deblock_report();
+#endif
 		}
 
 		/*
@@ -53,6 +83,9 @@ static void deblock_run(void *p1, void *p2, void *p3)
 		 */
 		if (atomic_get(&deblock_sync) != 0 && deblock_done == (u32)atomic_get(&deblock_end)) {
 			deblock_done = 0U;
+#ifdef H264BSD_DEBLOCK_ROWS_HOOK
+			deblock_rows = 0U;
+#endif
 			atomic_set(&deblock_end, 0);
 			atomic_clear(&deblock_sync);
 			k_sem_give(&deblock_idle);

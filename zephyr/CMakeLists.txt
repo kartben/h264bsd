@@ -32,6 +32,10 @@ if(CONFIG_H264BSD)
   if(CONFIG_H264BSD_DEBLOCK_THREAD)
     zephyr_library_sources(h264bsd_deblock_thread.c)
     zephyr_library_compile_definitions(H264BSD_DEBLOCK_THREAD)
+    if(CONFIG_H264BSD_DEBLOCK_ROWS_HOOK)
+      zephyr_library_compile_definitions(
+        H264BSD_DEBLOCK_ROWS_HOOK=${CONFIG_H264BSD_DEBLOCK_ROWS_HOOK})
+    endif()
   endif()
 
   # ESP32-P4 PIE kernels, assembled with a toolchain that knows the extension

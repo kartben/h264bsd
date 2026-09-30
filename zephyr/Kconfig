@@ -70,6 +70,16 @@ config H264BSD_DEBLOCK_THREAD_STACK_SIZE
 	int "Deblocking thread stack size"
 	default 2048
 
+config H264BSD_DEBLOCK_ROWS_HOOK
+	string "Function told about the rows of a picture that are final"
+	help
+	  Name a function of your own to have it called on the deblocking
+	  thread as rows of macroblocks become final, while they are likely
+	  still in the cache, for instance to convert them for a display.
+	  It is given the picture, its width and height in macroblocks and
+	  the first and end row made final, and every row of a picture once,
+	  in order, the last ones before the decoder returns the picture.
+
 endif # H264BSD_DEBLOCK_THREAD
 
 endif # H264BSD
